@@ -1,0 +1,1247 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local MAX_DISTANCE = 200000000000
+local MAX_FRAMES = 5
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"))()
+
+local Window = Library:CreateWindow({
+    Title = "Astral",
+    Footer = "Teleport Control",
+    Center = true,
+    AutoShow = true,
+    Resizable = true,
+    ShowCustomCursor = true
+})
+
+local State = {
+    VoidSpam = false,
+    VoidAxis = "X → Y → Z",
+    VoidX = 100,
+    VoidY = 100,
+    VoidZ = 100,
+    VoidDelay = 0.12,
+    VoidIndex = 1,
+
+    NormalDistance = 100,
+
+    RandomTeleport = false,
+    RandomMin = 100,
+    RandomMax = MAX_DISTANCE,
+    RandomVertical = MAX_DISTANCE,
+
+    CustomX = 0,
+    CustomY = 0,
+    CustomZ = MAX_DISTANCE,
+
+    Unpredictable = false,
+    UnpredictableCount = 8,
+    UnpredictableMin = 100,
+    UnpredictableMax = MAX_DISTANCE,
+    UnpredictableVertical = MAX_DISTANCE,
+    UnpredictableSpread = 360,
+    UnpredictableDelay = 0.03,
+
+    FrameSkipper = false,
+    FrameSkipDistance = MAX_DISTANCE,
+    FrameSkipFrames = 1,
+    FrameSkipDirection = "Forward",
+    FrameSkipCounter = 0,
+
+    VoidHide = false,
+    VoidHidePreset = "Far Corner",
+    VoidHideDistance = MAX_DISTANCE,
+    VoidHideFloating = true,
+    VoidHideReturn = true,
+    VoidHideOrigin = nil,
+    VoidHidePosition = nil,
+
+    Orbit = false,
+    OrbitDistance = 100,
+    OrbitSpeed = 2,
+    OrbitHeight = 0,
+    OrbitAngle = 0,
+
+    PhaseMatrix = false,
+    PhaseSpeed = 5,
+    PhaseSize = MAX_DISTANCE,
+
+    CycloneDrive = false,
+    CycloneDistance = MAX_DISTANCE,
+    CycloneSpeed = 5,
+    CycloneAngle = 0,
+
+    RiftSurge = false,
+    SurgeDistance = MAX_DISTANCE,
+    SurgeSteps = 6,
+    SurgeSpread = MAX_DISTANCE,
+    SurgeHeight = MAX_DISTANCE,
+    SurgeSpeed = 0.08,
+    SurgePattern = "Zigzag",
+    SurgeReverse = false,
+    SurgeBusy = false
+}
+
+local function GetRoot()
+    local Character = LocalPlayer.Character
+    if not Character then
+        return nil
+    end
+
+    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    local Root = Character:FindFirstChild("HumanoidRootPart")
+
+    if not Humanoid or Humanoid.Health <= 0 or not Root then
+        return nil
+    end
+
+    return Root
+end
+
+local function Teleport(Position)
+    local Root = GetRoot()
+    if not Root then
+        return false
+    end
+
+    Root.CFrame = CFrame.new(Position) * Root.CFrame.Rotation
+    return true
+end
+
+local function ClampDistance(Value)
+    return math.clamp(Value, -MAX_DISTANCE, MAX_DISTANCE)
+end
+
+local function GetPresetDistance()
+    if State.VoidHidePreset == "Near" then
+        return 500
+    elseif State.VoidHidePreset == "Far" then
+        return 100000
+    elseif State.VoidHidePreset == "Far Corner" then
+        return 1000000
+    elseif State.VoidHidePreset == "Deep Void" then
+        return 10000000
+    elseif State.VoidHidePreset == "Extreme" then
+        return MAX_DISTANCE
+    end
+
+    return State.VoidHideDistance
+end
+
+local function NormalTeleport()
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    Teleport(
+        Root.Position +
+        Root.CFrame.LookVector * ClampDistance(State.NormalDistance)
+    )
+end
+
+local function RandomTeleport()
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    local Min = math.min(State.RandomMin, State.RandomMax)
+    local Max = math.max(State.RandomMin, State.RandomMax)
+
+    local Distance = Min + math.random() * (Max - Min)
+    local Angle = math.rad(math.random(0, 359))
+
+    local Direction = Vector3.new(
+        math.cos(Angle),
+        0,
+        math.sin(Angle)
+    )
+
+    local Vertical = math.random(
+        -math.abs(State.RandomVertical),
+        math.abs(State.RandomVertical)
+    )
+
+    Teleport(
+        Root.Position +
+        Direction * Distance +
+        Vector3.new(0, Vertical, 0)
+    )
+end
+
+local function CustomTeleport()
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    local Offset = Vector3.new(
+        ClampDistance(State.CustomX),
+        ClampDistance(State.CustomY),
+        ClampDistance(State.CustomZ)
+    )
+
+    Teleport(Root.Position + Offset)
+end
+
+local function VoidSpamStep()
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    local Axis
+
+    if State.VoidAxis == "X → Y → Z" then
+        Axis = State.VoidIndex
+
+        State.VoidIndex += 1
+
+        if State.VoidIndex > 3 then
+            State.VoidIndex = 1
+        end
+    elseif State.VoidAxis == "X Only" then
+        Axis = 1
+    elseif State.VoidAxis == "Y Only" then
+        Axis = 2
+    else
+        Axis = 3
+    end
+
+    local Offset
+
+    if Axis == 1 then
+        Offset = Vector3.new(State.VoidX, 0, 0)
+    elseif Axis == 2 then
+        Offset = Vector3.new(0, State.VoidY, 0)
+    else
+        Offset = Vector3.new(0, 0, State.VoidZ)
+    end
+
+    Teleport(Root.Position + Offset)
+end
+
+local function UnpredictableTeleport()
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    local Count = math.max(1, math.floor(State.UnpredictableCount))
+
+    for _ = 1, Count do
+        Root = GetRoot()
+        if not Root then
+            break
+        end
+
+        local Min = math.min(
+            State.UnpredictableMin,
+            State.UnpredictableMax
+        )
+
+        local Max = math.max(
+            State.UnpredictableMin,
+            State.UnpredictableMax
+        )
+
+        local Distance = Min + math.random() * (Max - Min)
+        local Angle = math.rad(
+            math.random() * State.UnpredictableSpread
+        )
+
+        local Direction = Vector3.new(
+            math.cos(Angle),
+            0,
+            math.sin(Angle)
+        )
+
+        local Height = math.random(
+            -math.abs(State.UnpredictableVertical),
+            math.abs(State.UnpredictableVertical)
+        )
+
+        Teleport(
+            Root.Position +
+            Direction * Distance +
+            Vector3.new(0, Height, 0)
+        )
+
+        task.wait(State.UnpredictableDelay)
+    end
+end
+
+local function FrameSkipStep()
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    local Direction = Root.CFrame.LookVector
+
+    if State.FrameSkipDirection == "Backward" then
+        Direction = -Root.CFrame.LookVector
+    elseif State.FrameSkipDirection == "Left" then
+        Direction = -Root.CFrame.RightVector
+    elseif State.FrameSkipDirection == "Right" then
+        Direction = Root.CFrame.RightVector
+    elseif State.FrameSkipDirection == "Up" then
+        Direction = Vector3.yAxis
+    elseif State.FrameSkipDirection == "Down" then
+        Direction = -Vector3.yAxis
+    end
+
+    Teleport(
+        Root.Position +
+        Direction * ClampDistance(State.FrameSkipDistance)
+    )
+end
+
+local function VoidHide()
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    if not State.VoidHide then
+        return
+    end
+
+    if not State.VoidHidePosition then
+        State.VoidHideOrigin = Root.CFrame
+
+        local Distance = GetPresetDistance()
+        local Direction = (
+            Root.CFrame.LookVector +
+            Root.CFrame.RightVector
+        ).Unit
+
+        State.VoidHidePosition =
+            Root.Position +
+            Direction * Distance +
+            Vector3.new(0, Distance, 0)
+    end
+
+    Root.CFrame =
+        CFrame.new(State.VoidHidePosition) *
+        Root.CFrame.Rotation
+
+    if State.VoidHideFloating then
+        Root.AssemblyLinearVelocity = Vector3.zero
+        Root.AssemblyAngularVelocity = Vector3.zero
+    end
+end
+
+local function ExitVoidHide()
+    if not State.VoidHideOrigin then
+        State.VoidHidePosition = nil
+        return
+    end
+
+    if State.VoidHideReturn then
+        local Root = GetRoot()
+        if Root then
+            Root.CFrame = State.VoidHideOrigin
+        end
+    end
+
+    State.VoidHideOrigin = nil
+    State.VoidHidePosition = nil
+end
+
+local function FindNearestPlayer()
+    local Root = GetRoot()
+    if not Root then
+        return nil
+    end
+
+    local Nearest
+    local Distance = math.huge
+
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer then
+            local Character = Player.Character
+            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+            local TargetRoot = Character and Character:FindFirstChild("HumanoidRootPart")
+
+            if Humanoid and TargetRoot and Humanoid.Health > 0 then
+                local CurrentDistance =
+                    (TargetRoot.Position - Root.Position).Magnitude
+
+                if CurrentDistance < Distance then
+                    Distance = CurrentDistance
+                    Nearest = TargetRoot
+                end
+            end
+        end
+    end
+
+    return Nearest
+end
+
+local function OrbitStep(Delta)
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    OrbitTarget = FindNearestPlayer()
+
+    if not OrbitTarget then
+        return
+    end
+
+    State.OrbitAngle += State.OrbitSpeed * Delta
+
+    local Angle = State.OrbitAngle
+    local Distance = math.abs(State.OrbitDistance)
+
+    local Position =
+        OrbitTarget.Position +
+        Vector3.new(
+            math.cos(Angle) * Distance,
+            State.OrbitHeight,
+            math.sin(Angle) * Distance
+        )
+
+    Teleport(Position)
+end
+
+local function PhaseStep(Delta)
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    State.PhaseSize = math.clamp(
+        State.PhaseSize,
+        0,
+        MAX_DISTANCE
+    )
+
+    local Offset =
+        Root.CFrame.LookVector *
+        math.sin(os.clock() * State.PhaseSpeed) *
+        State.PhaseSize
+
+    Teleport(Root.Position + Offset)
+end
+
+local function CycloneStep(Delta)
+    local Root = GetRoot()
+    if not Root then
+        return
+    end
+
+    State.CycloneAngle += State.CycloneSpeed * Delta
+
+    local Radius = math.abs(State.CycloneDistance)
+
+    local Position =
+        Root.Position +
+        Vector3.new(
+            math.cos(State.CycloneAngle) * Radius,
+            math.sin(State.CycloneAngle * 1.5) * Radius * 0.25,
+            math.sin(State.CycloneAngle) * Radius
+        )
+
+    Teleport(Position)
+end
+
+local function RiftPoint(Root, Index, Total)
+    local Pattern = State.SurgePattern
+    local T = Total <= 1 and 1 or (Index - 1) / (Total - 1)
+
+    local Forward = Root.CFrame.LookVector
+    local Right = Root.CFrame.RightVector
+    local Up = Vector3.yAxis
+
+    local Distance = State.SurgeDistance
+    local Spread = State.SurgeSpread
+    local Height = State.SurgeHeight
+
+    if Pattern == "Line" then
+        return Root.Position + Forward * Distance * T
+
+    elseif Pattern == "Zigzag" then
+        local Side = (Index % 2 == 0 and 1 or -1) * Spread
+
+        return Root.Position +
+            Forward * Distance * T +
+            Right * Side +
+            Up * Height * T
+
+    elseif Pattern == "Arc" then
+        local Angle = math.rad(-90 + 180 * T)
+
+        return Root.Position +
+            Forward * math.cos(Angle) * Distance +
+            Right * math.sin(Angle) * Spread +
+            Up * Height * math.sin(math.pi * T)
+
+    elseif Pattern == "Spiral" then
+        local Angle = T * math.pi * 4
+
+        return Root.Position +
+            Forward * math.cos(Angle) * Distance * T +
+            Right * math.sin(Angle) * Distance * T +
+            Up * Height * T
+
+    elseif Pattern == "Random" then
+        local Angle = math.random() * math.pi * 2
+        local Radius = math.random() * math.abs(Spread)
+
+        return Root.Position +
+            Forward * Distance * T +
+            Right * math.cos(Angle) * Radius +
+            Up * math.sin(Angle) * Radius
+
+    end
+
+    return Root.Position + Forward * Distance * T
+end
+
+local function RiftSurgeOnce()
+    if State.SurgeBusy then
+        return
+    end
+
+    State.SurgeBusy = true
+
+    local Root = GetRoot()
+
+    if Root then
+        local Origin = Root.CFrame
+        local Steps = math.max(1, math.floor(State.SurgeSteps))
+
+        for Step = 1, Steps do
+            Root = GetRoot()
+
+            if not Root then
+                break
+            end
+
+            local Index = Step
+
+            if State.SurgeReverse then
+                Index = Steps - Step + 1
+            end
+
+            local Position = RiftPoint(
+                Origin,
+                Index,
+                Steps
+            )
+
+            Teleport(Position)
+
+            task.wait(
+                math.max(
+                    0,
+                    State.SurgeSpeed
+                )
+            )
+        end
+    end
+
+    State.SurgeBusy = false
+end
+
+local Tabs = {}
+
+Tabs.Void = Window:AddTab("Void Spam", "ghost")
+Tabs.Teleport = Window:AddTab("Teleport", "move")
+Tabs.Advanced = Window:AddTab("Advanced", "zap")
+Tabs.Phase = Window:AddTab("Phasing", "layers")
+Tabs.Orbit = Window:AddTab("Orbit", "refresh-cw")
+Tabs.Rift = Window:AddTab("Rift Surge", "sparkles")
+
+local VoidBox = Tabs.Void:AddLeftGroupbox("Void Spam")
+
+VoidBox:AddToggle("VoidSpam", {
+    Text = "Enable Void Spam",
+    Default = false,
+    Callback = function(Value)
+        State.VoidSpam = Value
+    end
+})
+
+VoidBox:AddDropdown("VoidAxis", {
+    Values = {
+        "X → Y → Z",
+        "X Only",
+        "Y Only",
+        "Z Only"
+    },
+    Default = "X → Y → Z",
+    Text = "Axis Mode",
+    Callback = function(Value)
+        State.VoidAxis = Value
+        State.VoidIndex = 1
+    end
+})
+
+VoidBox:AddSlider("VoidX", {
+    Text = "Void X",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.VoidX = Value
+    end
+})
+
+VoidBox:AddSlider("VoidY", {
+    Text = "Void Y",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.VoidY = Value
+    end
+})
+
+VoidBox:AddSlider("VoidZ", {
+    Text = "Void Z",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.VoidZ = Value
+    end
+})
+
+VoidBox:AddSlider("VoidDelay", {
+    Text = "Spam Delay",
+    Default = 0.12,
+    Min = 0,
+    Max = 2,
+    Rounding = 3,
+    Compact = true,
+    Callback = function(Value)
+        State.VoidDelay = Value
+    end
+})
+
+local TeleportBox = Tabs.Teleport:AddLeftGroupbox("Teleport")
+
+TeleportBox:AddSlider("NormalDistance", {
+    Text = "Normal Distance",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.NormalDistance = Value
+    end
+})
+
+TeleportBox:AddButton({
+    Text = "Teleport Now",
+    Func = NormalTeleport
+})
+
+TeleportBox:AddToggle("RandomTeleport", {
+    Text = "Random Teleport Loop",
+    Default = false,
+    Callback = function(Value)
+        State.RandomTeleport = Value
+    end
+})
+
+TeleportBox:AddSlider("RandomMin", {
+    Text = "Random Minimum",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.RandomMin = Value
+    end
+})
+
+TeleportBox:AddSlider("RandomMax", {
+    Text = "Random Maximum",
+    Default = 1000,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.RandomMax = Value
+    end
+})
+
+TeleportBox:AddSlider("RandomVertical", {
+    Text = "Random Vertical",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.RandomVertical = Value
+    end
+})
+
+local CustomBox = Tabs.Teleport:AddRightGroupbox("Custom Teleport")
+
+CustomBox:AddSlider("CustomX", {
+    Text = "X Offset",
+    Default = 0,
+    Min = -MAX_DISTANCE,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.CustomX = Value
+    end
+})
+
+CustomBox:AddSlider("CustomY", {
+    Text = "Y Offset",
+    Default = 0,
+    Min = -MAX_DISTANCE,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.CustomY = Value
+    end
+})
+
+CustomBox:AddSlider("CustomZ", {
+    Text = "Z Offset",
+    Default = 100,
+    Min = -MAX_DISTANCE,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.CustomZ = Value
+    end
+})
+
+CustomBox:AddButton({
+    Text = "Custom Teleport",
+    Func = CustomTeleport
+})
+
+local UnpredictableBox = Tabs.Teleport:AddLeftGroupbox("Unpredictable")
+
+UnpredictableBox:AddSlider("UnpredictableCount", {
+    Text = "Jump Count",
+    Default = 8,
+    Min = 1,
+    Max = 50,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.UnpredictableCount = Value
+    end
+})
+
+UnpredictableBox:AddSlider("UnpredictableMin", {
+    Text = "Minimum Distance",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.UnpredictableMin = Value
+    end
+})
+
+UnpredictableBox:AddSlider("UnpredictableMax", {
+    Text = "Maximum Distance",
+    Default = 1000,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.UnpredictableMax = Value
+    end
+})
+
+UnpredictableBox:AddSlider("UnpredictableVertical", {
+    Text = "Vertical Range",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.UnpredictableVertical = Value
+    end
+})
+
+UnpredictableBox:AddSlider("UnpredictableSpread", {
+    Text = "Direction Spread",
+    Default = 360,
+    Min = 1,
+    Max = 360,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.UnpredictableSpread = Value
+    end
+})
+
+UnpredictableBox:AddSlider("UnpredictableDelay", {
+    Text = "Jump Delay",
+    Default = 0.03,
+    Min = 0,
+    Max = 1,
+    Rounding = 3,
+    Compact = true,
+    Callback = function(Value)
+        State.UnpredictableDelay = Value
+    end
+})
+
+UnpredictableBox:AddToggle("Unpredictable", {
+    Text = "Enable Unpredictable",
+    Default = false,
+    Callback = function(Value)
+        State.Unpredictable = Value
+    end
+})
+
+UnpredictableBox:AddButton({
+    Text = "Chaos Burst",
+    Func = UnpredictableTeleport
+})
+
+local FrameBox = Tabs.Advanced:AddLeftGroupbox("Frame Skipper")
+
+FrameBox:AddToggle("FrameSkipper", {
+    Text = "Enable Frame Skipper",
+    Default = false,
+    Callback = function(Value)
+        State.FrameSkipper = Value
+        State.FrameSkipCounter = 0
+    end
+})
+
+FrameBox:AddSlider("FrameSkipFrames", {
+    Text = "Skipped Frames",
+    Default = 1,
+    Min = 1,
+    Max = MAX_FRAMES,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.FrameSkipFrames = math.clamp(
+            math.floor(Value),
+            1,
+            MAX_FRAMES
+        )
+    end
+})
+
+FrameBox:AddSlider("FrameSkipDistance", {
+    Text = "Skip Distance",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.FrameSkipDistance = Value
+    end
+})
+
+FrameBox:AddDropdown("FrameSkipDirection", {
+    Values = {
+        "Forward",
+        "Backward",
+        "Left",
+        "Right",
+        "Up",
+        "Down"
+    },
+    Default = "Forward",
+    Text = "Direction",
+    Callback = function(Value)
+        State.FrameSkipDirection = Value
+    end
+})
+
+local HideBox = Tabs.Advanced:AddRightGroupbox("Void Hide")
+
+HideBox:AddToggle("VoidHide", {
+    Text = "Enable Void Hide",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            State.VoidHide = true
+            State.VoidHidePosition = nil
+            State.VoidHideOrigin = nil
+            task.defer(VoidHide)
+        else
+            State.VoidHide = false
+            ExitVoidHide()
+        end
+    end
+})
+
+HideBox:AddDropdown("VoidHidePreset", {
+    Values = {
+        "Near",
+        "Far",
+        "Far Corner",
+        "Deep Void",
+        "Extreme",
+        "Custom"
+    },
+    Default = "Far Corner",
+    Text = "Hide Preset",
+    Callback = function(Value)
+        State.VoidHidePreset = Value
+
+        if State.VoidHide then
+            State.VoidHidePosition = nil
+            task.defer(VoidHide)
+        end
+    end
+})
+
+HideBox:AddSlider("VoidHideDistance", {
+    Text = "Hide Distance",
+    Default = 1000,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.VoidHideDistance = Value
+
+        if State.VoidHide and State.VoidHidePreset == "Custom" then
+            State.VoidHidePosition = nil
+            task.defer(VoidHide)
+        end
+    end
+})
+
+HideBox:AddToggle("VoidHideFloating", {
+    Text = "Stay Floating",
+    Default = true,
+    Callback = function(Value)
+        State.VoidHideFloating = Value
+    end
+})
+
+HideBox:AddToggle("VoidHideReturn", {
+    Text = "Return On Disable",
+    Default = true,
+    Callback = function(Value)
+        State.VoidHideReturn = Value
+    end
+})
+
+local OrbitBox = Tabs.Orbit:AddLeftGroupbox("Orbit")
+
+OrbitBox:AddToggle("Orbit", {
+    Text = "Enable Orbit",
+    Default = false,
+    Callback = function(Value)
+        State.Orbit = Value
+        if Value then
+            State.OrbitAngle = 0
+        end
+    end
+})
+
+OrbitBox:AddSlider("OrbitDistance", {
+    Text = "Orbit Distance",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.OrbitDistance = Value
+    end
+})
+
+OrbitBox:AddSlider("OrbitSpeed", {
+    Text = "Orbit Speed",
+    Default = 2,
+    Min = 0,
+    Max = 50,
+    Rounding = 2,
+    Compact = true,
+    Callback = function(Value)
+        State.OrbitSpeed = Value
+    end
+})
+
+OrbitBox:AddSlider("OrbitHeight", {
+    Text = "Orbit Height",
+    Default = 0,
+    Min = -MAX_DISTANCE,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.OrbitHeight = Value
+    end
+})
+
+local PhaseBox = Tabs.Phase:AddLeftGroupbox("Phase Matrix")
+
+PhaseBox:AddToggle("PhaseMatrix", {
+    Text = "Enable Phase Matrix",
+    Default = false,
+    Callback = function(Value)
+        State.PhaseMatrix = Value
+    end
+})
+
+PhaseBox:AddSlider("PhaseSpeed", {
+    Text = "Phase Speed",
+    Default = 5,
+    Min = 0,
+    Max = 100,
+    Rounding = 2,
+    Compact = true,
+    Callback = function(Value)
+        State.PhaseSpeed = Value
+    end
+})
+
+PhaseBox:AddSlider("PhaseSize", {
+    Text = "Phase Distance",
+    Default = 25,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.PhaseSize = Value
+    end
+})
+
+local CycloneBox = Tabs.Phase:AddRightGroupbox("Cyclone Drive")
+
+CycloneBox:AddToggle("CycloneDrive", {
+    Text = "Enable Cyclone",
+    Default = false,
+    Callback = function(Value)
+        State.CycloneDrive = Value
+        if Value then
+            State.CycloneAngle = 0
+        end
+    end
+})
+
+CycloneBox:AddSlider("CycloneDistance", {
+    Text = "Cyclone Distance",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.CycloneDistance = Value
+    end
+})
+
+CycloneBox:AddSlider("CycloneSpeed", {
+    Text = "Cyclone Speed",
+    Default = 5,
+    Min = 0,
+    Max = 100,
+    Rounding = 2,
+    Compact = true,
+    Callback = function(Value)
+        State.CycloneSpeed = Value
+    end
+})
+
+local RiftBox = Tabs.Rift:AddLeftGroupbox("Rift Surge")
+
+RiftBox:AddToggle("RiftSurge", {
+    Text = "Auto Surge",
+    Default = false,
+    Callback = function(Value)
+        State.RiftSurge = Value
+    end
+})
+
+RiftBox:AddButton({
+    Text = "SURGE NOW",
+    Func = RiftSurgeOnce
+})
+
+RiftBox:AddSlider("SurgeDistance", {
+    Text = "Surge Distance",
+    Default = 1000,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.SurgeDistance = Value
+    end
+})
+
+RiftBox:AddSlider("SurgeSteps", {
+    Text = "Surge Steps",
+    Default = 6,
+    Min = 1,
+    Max = 50,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.SurgeSteps = Value
+    end
+})
+
+RiftBox:AddSlider("SurgeSpread", {
+    Text = "Surge Spread",
+    Default = 100,
+    Min = 0,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.SurgeSpread = Value
+    end
+})
+
+RiftBox:AddSlider("SurgeHeight", {
+    Text = "Surge Height",
+    Default = 0,
+    Min = -MAX_DISTANCE,
+    Max = MAX_DISTANCE,
+    Rounding = 0,
+    Compact = true,
+    Callback = function(Value)
+        State.SurgeHeight = Value
+    end
+})
+
+RiftBox:AddSlider("SurgeSpeed", {
+    Text = "Surge Speed",
+    Default = 0.08,
+    Min = 0,
+    Max = 2,
+    Rounding = 3,
+    Compact = true,
+    Callback = function(Value)
+        State.SurgeSpeed = Value
+    end
+})
+
+RiftBox:AddDropdown("SurgePattern", {
+    Values = {
+        "Line",
+        "Zigzag",
+        "Arc",
+        "Spiral",
+        "Random"
+    },
+    Default = "Zigzag",
+    Text = "Surge Pattern",
+    Callback = function(Value)
+        State.SurgePattern = Value
+    end
+})
+
+RiftBox:AddToggle("SurgeReverse", {
+    Text = "Reverse Surge",
+    Default = false,
+    Callback = function(Value)
+        State.SurgeReverse = Value
+    end
+})
+
+local LastVoid = 0
+local LastRandom = 0
+local LastUnpredictable = 0
+local LastSurge = 0
+
+Connections.Main = RunService.Heartbeat:Connect(function(Delta)
+    local Now = os.clock()
+
+    if State.VoidSpam and Now - LastVoid >= State.VoidDelay then
+        LastVoid = Now
+        VoidSpamStep()
+    end
+
+    if State.RandomTeleport and Now - LastRandom >= State.VoidDelay then
+        LastRandom = Now
+        RandomTeleport()
+    end
+
+    if State.Unpredictable and Now - LastUnpredictable >= State.UnpredictableDelay then
+        LastUnpredictable = Now
+        task.spawn(UnpredictableTeleport)
+    end
+
+    if State.VoidHide then
+        VoidHide()
+    end
+
+    if State.Orbit then
+        OrbitStep(Delta)
+    end
+
+    if State.PhaseMatrix then
+        PhaseStep(Delta)
+    end
+
+    if State.CycloneDrive then
+        CycloneStep(Delta)
+    end
+
+    if State.RiftSurge and not State.SurgeBusy then
+        if Now - LastSurge >= math.max(State.SurgeSpeed, 0.01) then
+            LastSurge = Now
+            task.spawn(RiftSurgeOnce)
+        end
+    end
+end)
+
+Connections.Render = RunService.RenderStepped:Connect(function()
+    if not State.FrameSkipper then
+        State.FrameSkipCounter = 0
+        return
+    end
+
+    State.FrameSkipCounter += 1
+
+    if State.FrameSkipCounter >= math.clamp(
+        math.floor(State.FrameSkipFrames),
+        1,
+        MAX_FRAMES
+    ) then
+        State.FrameSkipCounter = 0
+        FrameSkipStep()
+    end
+end)
+
+Connections.Character = LocalPlayer.CharacterAdded:Connect(function()
+    State.VoidIndex = 1
+    State.VoidHideOrigin = nil
+    State.VoidHidePosition = nil
+    State.OrbitAngle = 0
+    State.CycloneAngle = 0
+end)
+
+Window:SelectTab(1)
