@@ -1,0 +1,3665 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"))()
+
+local Window = Library:CreateWindow({
+    Title = "Astral",
+    Footer = "Teleport Control",
+    Center = true,
+    AutoShow = true,
+    Resizable = true,
+    ShowCustomCursor = true,
+    MobileButtonsSide = "Right"
+})
+
+local MAX_DISTANCE = 200000000000
+local MIN_INTERVAL = 0.003
+
+local State = {
+    Enhancer = true,
+    ResetVelocity = true,
+    PreserveFacing = true,
+    GroundAssist = false,
+    CollisionSafe = false,
+    DestinationCheck = true,
+    SmoothSnap = false,
+    SnapSteps = 3,
+
+    TeleportCooldown = 0,
+    MicroRandom = false,
+    MicroRandomAmount = 2,
+    RetryTeleport = true,
+    RetryCount = 3,
+    GlobalMaxDistance = MAX_DISTANCE,
+
+    EnhancerStyle = "Balanced",
+    SpeedMultiplier = 1,
+    DistanceMultiplier = 1,
+    TeleportPower = 1,
+    SafeOffset = 0,
+    AdaptiveDistance = false,
+    AdaptiveThreshold = 5000,
+    AdaptiveSteps = 4,
+    AntiJitter = true,
+    JitterThreshold = 2,
+    Recovery = true,
+    RecoveryTolerance = 8,
+    FacingMode = "Preserve",
+    VelocityMode = "Reset",
+    SmoothMode = "Instant",
+
+    NormalTeleport = false,
+    NormalDistance = 100,
+    NormalDirection = "Look",
+    NormalInterval = 0.05,
+
+    VoidSpam = false,
+    VoidX = 100,
+    VoidY = 100,
+    VoidZ = 100,
+    VoidSpeed = 100,
+    VoidDelay = 0.02,
+    VoidAxis = "XYZ",
+
+    RandomTeleport = false,
+    RandomMin = 50,
+    RandomMax = 500,
+    RandomVertical = 100,
+    RandomDelay = 0.08,
+
+    CustomTeleport = false,
+    CustomX = 0,
+    CustomY = 0,
+    CustomZ = 100,
+    CustomInterval = 0.05,
+
+    Unpredictable = false,
+    UnpredictableCount = 5,
+    UnpredictableMin = 50,
+    UnpredictableMax = 1000,
+    UnpredictableVertical = 300,
+    UnpredictableSpread = 180,
+    UnpredictableDelay = 0.025,
+
+    UnpredictableStyle = "Chaos",
+    UnpredictablePattern = "Random",
+    UnpredictableDirection = "All",
+    UnpredictableBurst = 2,
+    UnpredictableAcceleration = 1,
+    UnpredictableHeightMode = "Random",
+    UnpredictableDistanceMode = "Random",
+    UnpredictableCalmness = 50,
+    UnpredictableChaos = 75,
+    UnpredictableMomentum = false,
+    UnpredictableReturn = false,
+
+    FrameSkipper = false,
+    SkippedFrames = 1,
+    FrameMode = "Direction",
+    SkipDistance = 100,
+    SkipDirection = "Look",
+    FrameRandomMin = 50,
+    FrameRandomMax = 500,
+    FrameRandomVertical = 100,
+    FrameRandomSpread = 180,
+
+    FramePattern = "Alternating",
+    FrameBurst = 1,
+    FrameSpeed = 2,
+    FrameAdaptive = true,
+    FrameAdaptiveScale = 1,
+    FrameDistanceVariance = 25,
+    FrameDirectionVariance = 45,
+    FrameVerticalVariance = 25,
+    FrameReverseChance = 20,
+    FrameChain = false,
+    FrameChainLength = 3,
+    FramePhaseOffset = 0,
+
+    VoidHide = false,
+    VoidHideDistance = 1000,
+    VoidHideHeight = 0,
+    VoidHidePreset = "Far Corner",
+    VoidStayFloating = true,
+    VoidReturn = true,
+
+    Orbit = false,
+    OrbitDistance = 100,
+    OrbitSpeed = 12,
+    OrbitHeight = 0,
+
+    PhaseMatrix = false,
+    PhaseDistance = 500,
+    PhaseSpeed = 8,
+
+    CycloneDrive = false,
+    CycloneDistance = 500,
+    CycloneSpeed = 10,
+
+    RiftSurge = false,
+    RiftPattern = "Zigzag",
+    RiftSteps = 8,
+    RiftDistance = 1000,
+    RiftSpread = 90,
+    RiftHeight = 100,
+    RiftSpeed = 18,
+    RiftReverse = false,
+    RiftReturn = false,
+    RiftInterval = 0.15,
+
+    ConfigName = "Default"
+}
+
+local Runtime = {
+    VoidAxisIndex = 1,
+    FrameCounter = 0,
+    FrameSequence = 0,
+    OrbitAngle = 0,
+    CycloneAngle = 0,
+    LastTeleport = 0,
+    LastPosition = nil,
+    LastDestination = nil,
+    LastDirection = nil,
+    LastFramePosition = nil,
+    FrameBurstCounter = 0,
+    FramePatternIndex = 0,
+    UnpredictableSequence = 0,
+
+    VoidHidePosition = nil,
+    VoidOrigin = nil,
+
+    UnpredictableBusy = false,
+    RiftBusy = false,
+    TeleportBusy = false,
+
+    Configs = {},
+    Toggles = {},
+    Sliders = {},
+    Dropdowns = {},
+    Inputs = {}
+}
+
+local function safeNumber(value, fallback)
+    value = tonumber(value)
+    return value ~= nil and value or fallback
+end
+
+local function getRoot()
+    local character = LocalPlayer.Character
+    if not character then
+        return nil
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+
+    if not humanoid or not root or humanoid.Health <= 0 then
+        return nil
+    end
+
+    return root, humanoid
+end
+
+local function getMaxDistance()
+    return math.clamp(
+        safeNumber(State.GlobalMaxDistance, MAX_DISTANCE),
+        1,
+        MAX_DISTANCE
+    )
+end
+
+local function clampDistance(value)
+    return math.clamp(
+        math.abs(safeNumber(value, 0)),
+        0,
+        getMaxDistance()
+    )
+end
+
+local function getInterval(value)
+    return math.max(
+        MIN_INTERVAL,
+        safeNumber(value, 0.05)
+    )
+end
+
+local function getTeleportInterval(value)
+    local base = getInterval(value)
+    local multiplier = math.clamp(
+        safeNumber(State.SpeedMultiplier, 1),
+        0.05,
+        100
+    )
+
+    return math.max(
+        MIN_INTERVAL,
+        base / multiplier
+    )
+end
+
+local function unit(vector, fallback)
+    if typeof(vector) ~= "Vector3" or vector.Magnitude < 0.001 then
+        return fallback or Vector3.new(0, 0, -1)
+    end
+
+    return vector.Unit
+end
+
+local function flatLook(root)
+    return unit(
+        Vector3.new(
+            root.CFrame.LookVector.X,
+            0,
+            root.CFrame.LookVector.Z
+        )
+    )
+end
+
+local function randomDirection()
+    local theta = math.random() * math.pi * 2
+    local y = math.random() * 2 - 1
+    local radius = math.sqrt(math.max(0, 1 - y * y))
+
+    return Vector3.new(
+        radius * math.cos(theta),
+        y,
+        radius * math.sin(theta)
+    )
+end
+
+local function randomFloat(minimum, maximum)
+    minimum = safeNumber(minimum, 0)
+    maximum = safeNumber(maximum, 0)
+
+    if maximum < minimum then
+        minimum, maximum = maximum, minimum
+    end
+
+    return minimum + math.random() * (maximum - minimum)
+end
+
+local function directionFrom(root, mode)
+    if mode == "Look" then
+        return unit(root.CFrame.LookVector)
+    elseif mode == "Back" then
+        return unit(-root.CFrame.LookVector)
+    elseif mode == "Left" then
+        return unit(-root.CFrame.RightVector)
+    elseif mode == "Right" then
+        return unit(root.CFrame.RightVector)
+    elseif mode == "Up" then
+        return Vector3.new(0, 1, 0)
+    elseif mode == "Down" then
+        return Vector3.new(0, -1, 0)
+    end
+
+    return flatLook(root)
+end
+
+local function spreadDirection(direction, degrees)
+    direction = unit(direction)
+
+    local spread = math.clamp(
+        safeNumber(degrees, 0),
+        0,
+        180
+    )
+
+    if spread <= 0 then
+        return direction
+    end
+
+    local random = randomDirection()
+    local alpha = math.sin(math.rad(spread) / 2)
+
+    return unit(
+        direction:Lerp(random, alpha),
+        direction
+    )
+end
+
+local function rotateAroundY(direction, degrees)
+    direction = unit(direction)
+
+    local angle = math.rad(degrees)
+    local c = math.cos(angle)
+    local s = math.sin(angle)
+
+    return unit(Vector3.new(
+        direction.X * c - direction.Z * s,
+        direction.Y,
+        direction.X * s + direction.Z * c
+    ), direction)
+end
+
+local function getRaycastParams()
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+
+    if LocalPlayer.Character then
+        params.FilterDescendantsInstances = {
+            LocalPlayer.Character
+        }
+    end
+
+    return params
+end
+
+local function groundCorrect(position)
+    if not State.GroundAssist then
+        return position
+    end
+
+    local result = workspace:Raycast(
+        position + Vector3.new(0, 1000, 0),
+        Vector3.new(0, -2000, 0),
+        getRaycastParams()
+    )
+
+    if result then
+        return Vector3.new(
+            position.X,
+            result.Position.Y + 3,
+            position.Z
+        )
+    end
+
+    return position
+end
+
+local function collisionCorrect(position, root)
+    if not State.CollisionSafe then
+        return position
+    end
+
+    local size = root.Size + Vector3.new(0.5, 0.5, 0.5)
+
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+    overlapParams.FilterDescendantsInstances = {
+        LocalPlayer.Character
+    }
+
+    local parts = workspace:GetPartBoundsInBox(
+        CFrame.new(position),
+        size,
+        overlapParams
+    )
+
+    if #parts == 0 then
+        return position
+    end
+
+    local result = workspace:Raycast(
+        position + Vector3.new(0, 100, 0),
+        Vector3.new(0, -200, 0),
+        getRaycastParams()
+    )
+
+    if result then
+        return result.Position + Vector3.new(0, 3, 0)
+    end
+
+    return position + Vector3.new(0, 4, 0)
+end
+
+local function validateDestination(position, root)
+    if typeof(position) ~= "Vector3" then
+        return root.Position
+    end
+
+    local offset = position - root.Position
+    local magnitude = offset.Magnitude
+
+    if magnitude > getMaxDistance() then
+        position =
+            root.Position +
+            offset.Unit *
+            getMaxDistance()
+    end
+
+    return position
+end
+
+local function getStyleValues()
+    local style = State.EnhancerStyle
+
+    if style == "Fast" then
+        return 1.75, 1.15, 0.15
+    elseif style == "Precision" then
+        return 0.9, 1, 0
+    elseif style == "Smooth" then
+        return 0.8, 0.95, 0
+    elseif style == "Aggressive" then
+        return 3, 1.35, 0.35
+    elseif style == "Dynamic" then
+        return 1.5, 1.1, 0.2
+    end
+
+    return 1, 1, 0
+end
+
+local function enhancePosition(position, root)
+    if not State.Enhancer then
+        return position
+    end
+
+    local speedStyle, distanceStyle, randomStyle =
+        getStyleValues()
+
+    local requested = position - root.Position
+
+    local distanceMultiplier =
+        math.max(
+            0.01,
+            safeNumber(State.DistanceMultiplier, 1)
+        )
+
+    local power =
+        math.max(
+            0.01,
+            safeNumber(State.TeleportPower, 1)
+        )
+
+    local totalDistanceMultiplier =
+        distanceMultiplier *
+        power *
+        distanceStyle
+
+    if requested.Magnitude > 0.001 then
+        requested *= totalDistanceMultiplier
+    end
+
+    if State.AdaptiveDistance and
+        requested.Magnitude >
+        safeNumber(State.AdaptiveThreshold, 5000) then
+
+        local threshold =
+            math.max(
+                1,
+                safeNumber(
+                    State.AdaptiveThreshold,
+                    5000
+                )
+            )
+
+        local adaptive =
+            math.clamp(
+                requested.Magnitude / threshold,
+                1,
+                math.max(
+                    1,
+                    safeNumber(
+                        State.AdaptiveSteps,
+                        4
+                    )
+                )
+            )
+
+        requested *=
+            1 +
+            ((adaptive - 1) * 0.15)
+    end
+
+    if requested.Magnitude >
+        getMaxDistance() then
+
+        requested =
+            requested.Unit *
+            getMaxDistance()
+    end
+
+    position =
+        root.Position +
+        requested
+
+    local safeOffset =
+        math.max(
+            0,
+            safeNumber(
+                State.SafeOffset,
+                0
+            )
+        )
+
+    if safeOffset > 0 and
+        requested.Magnitude > 0.001 then
+
+        position +=
+            requested.Unit *
+            safeOffset
+    end
+
+    if State.MicroRandom then
+        local amount =
+            math.max(
+                0,
+                safeNumber(
+                    State.MicroRandomAmount,
+                    2
+                )
+            )
+
+        position += Vector3.new(
+            randomFloat(-amount, amount),
+            randomFloat(-amount, amount),
+            randomFloat(-amount, amount)
+        )
+    elseif randomStyle > 0 then
+        local amount =
+            safeNumber(
+                State.MicroRandomAmount,
+                2
+            ) *
+            randomStyle
+
+        position += Vector3.new(
+            randomFloat(-amount, amount),
+            randomFloat(-amount, amount),
+            randomFloat(-amount, amount)
+        )
+    end
+
+    if State.AntiJitter and Runtime.LastDestination then
+        local delta =
+            position -
+            Runtime.LastDestination
+
+        local threshold =
+            math.max(
+                0,
+                safeNumber(
+                    State.JitterThreshold,
+                    2
+                )
+            )
+
+        if delta.Magnitude <= threshold then
+            position =
+                Runtime.LastDestination
+        end
+    end
+
+    position =
+        validateDestination(
+            position,
+            root
+        )
+
+    position =
+        collisionCorrect(
+            position,
+            root
+        )
+
+    position =
+        groundCorrect(
+            position
+        )
+
+    position =
+        validateDestination(
+            position,
+            root
+        )
+
+    return position
+end
+
+local function getFacingCFrame(root, position, originalRotation)
+    local mode = State.FacingMode
+
+    if mode == "Preserve" then
+        return CFrame.new(position) * originalRotation
+    end
+
+    if mode == "Destination" then
+        local direction =
+            unit(
+                position - root.Position,
+                root.CFrame.LookVector
+            )
+
+        return CFrame.lookAt(
+            position,
+            position + direction
+        )
+    end
+
+    if mode == "Movement" then
+        local direction =
+            unit(
+                position - root.Position,
+                root.CFrame.LookVector
+            )
+
+        return CFrame.lookAt(
+            position,
+            position + direction
+        )
+    end
+
+    if mode == "Reverse" then
+        local direction =
+            unit(
+                root.CFrame.LookVector
+            )
+
+        return CFrame.lookAt(
+            position,
+            position - direction
+        )
+    end
+
+    return CFrame.new(position) * originalRotation
+end
+
+local function applyVelocity(root)
+    if not State.ResetVelocity then
+        return
+    end
+
+    local mode = State.VelocityMode
+
+    if mode == "Reset" then
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    elseif mode == "Soft" then
+        root.AssemblyLinearVelocity *= 0.15
+        root.AssemblyAngularVelocity *= 0.15
+    elseif mode == "Preserve" then
+        return
+    elseif mode == "Forward" then
+        root.AssemblyLinearVelocity =
+            root.CFrame.LookVector *
+            math.max(
+                1,
+                safeNumber(
+                    State.TeleportPower,
+                    1
+                ) * 10
+            )
+    end
+end
+
+local function moveToPosition(root, position, rotation)
+    local mode = State.SmoothMode
+
+    if State.SmoothSnap then
+        mode = "Stepped"
+    end
+
+    if mode == "Instant" then
+        root.CFrame =
+            getFacingCFrame(
+                root,
+                position,
+                rotation
+            )
+
+        applyVelocity(root)
+        return true
+    end
+
+    local start = root.Position
+
+    local steps =
+        math.clamp(
+            math.floor(
+                safeNumber(
+                    State.SnapSteps,
+                    3
+                )
+            ),
+            1,
+            30
+        )
+
+    if mode == "Smooth" then
+        steps =
+            math.max(
+                steps * 2,
+                4
+            )
+    end
+
+    for i = 1, steps do
+        if not getRoot() then
+            return false
+        end
+
+        local alpha = i / steps
+
+        if mode == "Smooth" then
+            alpha =
+                alpha *
+                alpha *
+                (3 - 2 * alpha)
+        end
+
+        local point =
+            start:Lerp(
+                position,
+                alpha
+            )
+
+        root.CFrame =
+            getFacingCFrame(
+                root,
+                point,
+                rotation
+            )
+
+        applyVelocity(root)
+
+        RunService.Heartbeat:Wait()
+    end
+
+    return true
+end
+
+local function performTeleport(position)
+    if Runtime.TeleportBusy then
+        return false
+    end
+
+    local root = getRoot()
+
+    if not root then
+        return false
+    end
+
+    local now = os.clock()
+
+    local cooldown =
+        math.max(
+            0,
+            safeNumber(
+                State.TeleportCooldown,
+                0
+            )
+        )
+
+    if cooldown > 0 and
+        now - Runtime.LastTeleport <
+        cooldown then
+
+        return false
+    end
+
+    local originalPosition =
+        root.Position
+
+    local originalRotation =
+        root.CFrame - root.Position
+
+    position =
+        enhancePosition(
+            position,
+            root
+        )
+
+    if State.Recovery and
+        Runtime.LastPosition and
+        State.AntiJitter then
+
+        if (
+            position -
+            Runtime.LastPosition
+        ).Magnitude <
+            math.max(
+                0.01,
+                safeNumber(
+                    State.JitterThreshold,
+                    2
+                )
+            ) then
+
+            return false
+        end
+    end
+
+    Runtime.TeleportBusy = true
+
+    local success = false
+
+    pcall(function()
+        success =
+            moveToPosition(
+                root,
+                position,
+                originalRotation
+            )
+    end)
+
+    Runtime.TeleportBusy = false
+
+    if not success then
+        return false
+    end
+
+    Runtime.LastPosition =
+        originalPosition
+
+    Runtime.LastDestination =
+        position
+
+    Runtime.LastDirection =
+        unit(
+            position - originalPosition,
+            Runtime.LastDirection
+        )
+
+    Runtime.LastTeleport =
+        os.clock()
+
+    return true
+end
+
+local function teleport(position)
+    local attempts =
+        State.RetryTeleport
+        and math.clamp(
+            math.floor(
+                safeNumber(
+                    State.RetryCount,
+                    3
+                )
+            ),
+            1,
+            10
+        )
+        or 1
+
+    for _ = 1, attempts do
+        if performTeleport(position) then
+            return true
+        end
+
+        if State.Recovery then
+            task.wait(MIN_INTERVAL)
+        else
+            break
+        end
+    end
+
+    return false
+end
+
+local function normalStep()
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    teleport(
+        root.Position +
+        directionFrom(
+            root,
+            State.NormalDirection
+        ) *
+        clampDistance(
+            State.NormalDistance
+        )
+    )
+end
+
+local function randomStep()
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    local minimum =
+        clampDistance(
+            State.RandomMin
+        )
+
+    local maximum =
+        clampDistance(
+            State.RandomMax
+        )
+
+    if maximum < minimum then
+        minimum, maximum =
+            maximum, minimum
+    end
+
+    local distance =
+        randomFloat(
+            minimum,
+            maximum
+        )
+
+    local vertical =
+        clampDistance(
+            State.RandomVertical
+        )
+
+    teleport(
+        root.Position +
+        randomDirection() *
+        distance +
+        Vector3.new(
+            0,
+            randomFloat(
+                -vertical,
+                vertical
+            ),
+            0
+        )
+    )
+end
+
+local function customStep()
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    teleport(
+        root.Position +
+        Vector3.new(
+            math.clamp(
+                safeNumber(
+                    State.CustomX,
+                    0
+                ),
+                -getMaxDistance(),
+                getMaxDistance()
+            ),
+            math.clamp(
+                safeNumber(
+                    State.CustomY,
+                    0
+                ),
+                -getMaxDistance(),
+                getMaxDistance()
+            ),
+            math.clamp(
+                safeNumber(
+                    State.CustomZ,
+                    0
+                ),
+                -getMaxDistance(),
+                getMaxDistance()
+            )
+        )
+    )
+end
+
+local function voidStep()
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    local x =
+        Vector3.new(
+            clampDistance(State.VoidX),
+            0,
+            0
+        )
+
+    local y =
+        Vector3.new(
+            0,
+            clampDistance(State.VoidY),
+            0
+        )
+
+    local z =
+        Vector3.new(
+            0,
+            0,
+            clampDistance(State.VoidZ)
+        )
+
+    local offset
+
+    if State.VoidAxis == "X" then
+        offset = x
+    elseif State.VoidAxis == "Y" then
+        offset = y
+    elseif State.VoidAxis == "Z" then
+        offset = z
+    else
+        if Runtime.VoidAxisIndex == 1 then
+            offset = x
+        elseif Runtime.VoidAxisIndex == 2 then
+            offset = y
+        else
+            offset = z
+        end
+
+        Runtime.VoidAxisIndex += 1
+
+        if Runtime.VoidAxisIndex > 3 then
+            Runtime.VoidAxisIndex = 1
+        end
+    end
+
+    teleport(
+        root.Position +
+        offset
+    )
+end
+
+local function getUnpredictableDirection(root, index)
+    local mode =
+        State.UnpredictableDirection
+
+    if mode == "Look" then
+        return spreadDirection(
+            flatLook(root),
+            State.UnpredictableSpread
+        )
+    end
+
+    if mode == "Back" then
+        return spreadDirection(
+            -flatLook(root),
+            State.UnpredictableSpread
+        )
+    end
+
+    if mode == "Side" then
+        local side =
+            index % 2 == 0
+            and root.CFrame.RightVector
+            or -root.CFrame.RightVector
+
+        return spreadDirection(
+            side,
+            State.UnpredictableSpread
+        )
+    end
+
+    if mode == "Vertical" then
+        return unit(
+            Vector3.new(
+                randomFloat(-0.35, 0.35),
+                math.random(0, 1) == 0
+                    and -1
+                    or 1,
+                randomFloat(-0.35, 0.35)
+            )
+        )
+    end
+
+    return spreadDirection(
+        randomDirection(),
+        State.UnpredictableSpread
+    )
+end
+
+local function getUnpredictableDistance()
+    local minimum =
+        clampDistance(
+            State.UnpredictableMin
+        )
+
+    local maximum =
+        clampDistance(
+            State.UnpredictableMax
+        )
+
+    if maximum < minimum then
+        minimum, maximum =
+            maximum, minimum
+    end
+
+    if State.UnpredictableDistanceMode == "Min" then
+        return minimum
+    elseif State.UnpredictableDistanceMode == "Max" then
+        return maximum
+    elseif State.UnpredictableDistanceMode == "Center" then
+        return (minimum + maximum) / 2
+    end
+
+    return randomFloat(
+        minimum,
+        maximum
+    )
+end
+
+local function getUnpredictableStyle(index)
+    if State.UnpredictableStyle == "Calm" then
+        local calm =
+            math.clamp(
+                safeNumber(
+                    State.UnpredictableCalmness,
+                    50
+                ),
+                0,
+                100
+            ) / 100
+
+        return {
+            DistanceScale =
+                0.65 + calm * 0.35,
+            Spread =
+                math.min(
+                    State.UnpredictableSpread,
+                    35 + calm * 45
+                ),
+            VerticalScale =
+                0.25 + calm * 0.35,
+            DelayScale =
+                1.5 - calm * 0.5
+        }
+    end
+
+    if State.UnpredictableStyle == "Controlled" then
+        return {
+            DistanceScale = 0.85,
+            Spread = 35,
+            VerticalScale = 0.4,
+            DelayScale = 1
+        }
+    end
+
+    if State.UnpredictableStyle == "Wave" then
+        local wave =
+            math.sin(
+                index * 0.9
+            )
+
+        return {
+            DistanceScale =
+                0.8 +
+                math.abs(wave) * 0.5,
+            Spread =
+                25 +
+                math.abs(wave) * 70,
+            VerticalScale =
+                0.5 +
+                math.abs(wave) * 0.5,
+            DelayScale =
+                0.7 +
+                math.abs(wave) * 0.8
+        }
+    end
+
+    local chaos =
+        math.clamp(
+            safeNumber(
+                State.UnpredictableChaos,
+                75
+            ),
+            0,
+            100
+        ) / 100
+
+    return {
+        DistanceScale =
+            0.7 + chaos * 0.9,
+        Spread =
+            math.min(
+                180,
+                State.UnpredictableSpread +
+                chaos * 30
+            ),
+        VerticalScale =
+            0.4 + chaos * 0.9,
+        DelayScale =
+            1.1 - chaos * 0.6
+    }
+end
+
+local function unpredictableBurst()
+    if Runtime.UnpredictableBusy then
+        return
+    end
+
+    Runtime.UnpredictableBusy = true
+
+    pcall(function()
+        local count =
+            math.clamp(
+                math.floor(
+                    safeNumber(
+                        State.UnpredictableCount,
+                        5
+                    )
+                ),
+                1,
+                100
+            )
+
+        local burst =
+            math.clamp(
+                math.floor(
+                    safeNumber(
+                        State.UnpredictableBurst,
+                        2
+                    )
+                ),
+                1,
+                10
+            )
+
+        local previousDirection =
+            Runtime.LastDirection
+
+        for index = 1, count do
+            if not State.Unpredictable then
+                break
+            end
+
+            local root = getRoot()
+            if not root then
+                break
+            end
+
+            local style =
+                getUnpredictableStyle(index)
+
+            local distance =
+                getUnpredictableDistance() *
+                style.DistanceScale
+
+            local direction =
+                getUnpredictableDirection(
+                    root,
+                    index
+                )
+
+            if State.UnpredictablePattern ==
+                "Alternating" then
+
+                if previousDirection then
+                    direction =
+                        index % 2 == 0
+                        and previousDirection
+                        or -previousDirection
+                end
+            elseif State.UnpredictablePattern ==
+                "Zigzag" then
+
+                local side =
+                    index % 2 == 0
+                    and root.CFrame.RightVector
+                    or -root.CFrame.RightVector
+
+                direction =
+                    unit(
+                        flatLook(root) +
+                        side * 0.8
+                    )
+            elseif State.UnpredictablePattern ==
+                "Wave" then
+
+                local angle =
+                    math.sin(index * 0.8) *
+                    State.UnpredictableSpread
+
+                direction =
+                    rotateAroundY(
+                        flatLook(root),
+                        angle
+                    )
+            elseif State.UnpredictablePattern ==
+                "Burst" then
+
+                direction =
+                    spreadDirection(
+                        direction,
+                        style.Spread
+                    )
+            end
+
+            direction =
+                spreadDirection(
+                    direction,
+                    style.Spread
+                )
+
+            local vertical =
+                clampDistance(
+                    State.UnpredictableVertical
+                ) *
+                style.VerticalScale
+
+            if State.UnpredictableHeightMode ==
+                "Flat" then
+
+                vertical = 0
+            elseif State.UnpredictableHeightMode ==
+                "High" then
+
+                vertical =
+                    math.abs(vertical)
+            elseif State.UnpredictableHeightMode ==
+                "Low" then
+
+                vertical =
+                    -math.abs(vertical)
+            end
+
+            if State.UnpredictableMomentum and
+                previousDirection then
+
+                direction =
+                    unit(
+                        direction +
+                        previousDirection *
+                        math.clamp(
+                            safeNumber(
+                                State.UnpredictableAcceleration,
+                                1
+                            ),
+                            0,
+                            10
+                        ) *
+                        0.1,
+                        direction
+                    )
+            end
+
+            local destination =
+                root.Position +
+                direction * distance +
+                Vector3.new(
+                    0,
+                    randomFloat(
+                        -vertical,
+                        vertical
+                    ),
+                    0
+                )
+
+            teleport(destination)
+
+            previousDirection =
+                direction
+
+            Runtime.UnpredictableSequence += 1
+
+            if index % burst == 0 then
+                task.wait(
+                    getTeleportInterval(
+                        State.UnpredictableDelay *
+                        style.DelayScale
+                    )
+                )
+            else
+                task.wait(
+                    MIN_INTERVAL
+                )
+            end
+        end
+
+        if State.UnpredictableReturn then
+            local root = getRoot()
+            if root and Runtime.LastPosition then
+                teleport(
+                    Runtime.LastPosition
+                )
+            end
+        end
+    end)
+
+    Runtime.UnpredictableBusy = false
+end
+
+local function frameRandomStep()
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    local minimum =
+        clampDistance(
+            State.FrameRandomMin
+        )
+
+    local maximum =
+        clampDistance(
+            State.FrameRandomMax
+        )
+
+    if maximum < minimum then
+        minimum, maximum =
+            maximum, minimum
+    end
+
+    local distance =
+        randomFloat(
+            minimum,
+            maximum
+        )
+
+    local vertical =
+        clampDistance(
+            State.FrameRandomVertical
+        )
+
+    local direction =
+        spreadDirection(
+            flatLook(root),
+            State.FrameRandomSpread
+        )
+
+    if State.FrameAdaptive then
+        local velocity =
+            root.AssemblyLinearVelocity.Magnitude
+
+        local scale =
+            1 +
+            math.clamp(
+                velocity / 100,
+                0,
+                10
+            ) *
+            safeNumber(
+                State.FrameAdaptiveScale,
+                1
+            ) *
+            0.1
+
+        distance *= scale
+    end
+
+    local variance =
+        math.max(
+            0,
+            safeNumber(
+                State.FrameDistanceVariance,
+                25
+            )
+        )
+
+    distance +=
+        randomFloat(
+            -distance * variance / 100,
+            distance * variance / 100
+        )
+
+    direction =
+        rotateAroundY(
+            direction,
+            randomFloat(
+                -State.FrameDirectionVariance,
+                State.FrameDirectionVariance
+            )
+        )
+
+    vertical +=
+        randomFloat(
+            -vertical *
+                State.FrameVerticalVariance /
+                100,
+            vertical *
+                State.FrameVerticalVariance /
+                100
+        )
+
+    if math.random(1, 100) <=
+        math.clamp(
+            State.FrameReverseChance,
+            0,
+            100
+        ) then
+
+        direction = -direction
+    end
+
+    teleport(
+        root.Position +
+        direction * distance +
+        Vector3.new(
+            0,
+            randomFloat(
+                -vertical,
+                vertical
+            ),
+            0
+        )
+    )
+end
+
+local function getFramePatternDirection(root, index)
+    local forward =
+        flatLook(root)
+
+    local right =
+        unit(root.CFrame.RightVector)
+
+    local pattern =
+        State.FramePattern
+
+    if pattern == "Forward" then
+        return forward
+    end
+
+    if pattern == "Backward" then
+        return -forward
+    end
+
+    if pattern == "Left" then
+        return -right
+    end
+
+    if pattern == "Right" then
+        return right
+    end
+
+    if pattern == "Alternating" then
+        return
+            index % 2 == 0
+            and -forward
+            or forward
+    end
+
+    if pattern == "Zigzag" then
+        return unit(
+            forward +
+            (
+                index % 2 == 0
+                and right
+                or -right
+            )
+        )
+    end
+
+    if pattern == "Sideways" then
+        return
+            index % 2 == 0
+            and right
+            or -right
+    end
+
+    if pattern == "Circle" then
+        local angle =
+            index *
+            math.rad(45)
+
+        return unit(
+            forward * math.cos(angle) +
+            right * math.sin(angle)
+        )
+    end
+
+    if pattern == "Random" then
+        return spreadDirection(
+            randomDirection(),
+            State.FrameDirectionVariance
+        )
+    end
+
+    return forward
+end
+
+local function frameStep()
+    Runtime.FrameCounter += 1
+
+    local skipped =
+        math.clamp(
+            math.floor(
+                safeNumber(
+                    State.SkippedFrames,
+                    1
+                )
+            ),
+            1,
+            60
+        )
+
+    local phase =
+        math.floor(
+            safeNumber(
+                State.FramePhaseOffset,
+                0
+            )
+        )
+
+    if (
+        Runtime.FrameCounter +
+        phase
+    ) %
+        (skipped + 1) ~= 0 then
+
+        return
+    end
+
+    Runtime.FramePatternIndex += 1
+
+    local burst =
+        math.clamp(
+            math.floor(
+                safeNumber(
+                    State.FrameBurst,
+                    1
+                )
+            ),
+            1,
+            20
+        )
+
+    Runtime.FrameBurstCounter += 1
+
+    if Runtime.FrameBurstCounter > burst then
+        Runtime.FrameBurstCounter = 1
+        return
+    end
+
+    if State.FrameMode == "Random" then
+        frameRandomStep()
+        return
+    end
+
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    local distance =
+        clampDistance(
+            State.SkipDistance
+        )
+
+    if State.FrameAdaptive then
+        local velocity =
+            root.AssemblyLinearVelocity.Magnitude
+
+        distance *=
+            1 +
+            math.clamp(
+                velocity / 100,
+                0,
+                10
+            ) *
+            safeNumber(
+                State.FrameAdaptiveScale,
+                1
+            ) *
+            0.1
+    end
+
+    local direction =
+        getFramePatternDirection(
+            root,
+            Runtime.FramePatternIndex
+        )
+
+    if State.FramePattern == "Random" then
+        direction =
+            spreadDirection(
+                direction,
+                State.FrameDirectionVariance
+            )
+    end
+
+    direction =
+        rotateAroundY(
+            direction,
+            randomFloat(
+                -State.FrameDirectionVariance,
+                State.FrameDirectionVariance
+            )
+        )
+
+    if math.random(1, 100) <=
+        math.clamp(
+            State.FrameReverseChance,
+            0,
+            100
+        ) then
+
+        direction = -direction
+    end
+
+    local vertical =
+        clampDistance(
+            State.FrameRandomVertical
+        )
+
+    vertical +=
+        randomFloat(
+            -vertical *
+                State.FrameVerticalVariance /
+                100,
+            vertical *
+                State.FrameVerticalVariance /
+                100
+        )
+
+    local destination =
+        root.Position +
+        direction * distance +
+        Vector3.new(
+            0,
+            randomFloat(
+                -vertical,
+                vertical
+            ),
+            0
+        )
+
+    teleport(destination)
+
+    Runtime.LastFramePosition =
+        destination
+
+    if State.FrameChain and
+        Runtime.FramePatternIndex %
+        math.max(
+            1,
+            math.floor(
+                State.FrameChainLength
+            )
+        ) == 0 then
+
+        Runtime.FramePatternIndex = 0
+    end
+end
+
+local function getVoidHidePosition(root)
+    local distance =
+        clampDistance(
+            State.VoidHideDistance
+        )
+
+    local height =
+        math.clamp(
+            safeNumber(
+                State.VoidHideHeight,
+                0
+            ),
+            -getMaxDistance(),
+            getMaxDistance()
+        )
+
+    local direction
+
+    if State.VoidHidePreset == "Near" then
+        direction = flatLook(root)
+    elseif State.VoidHidePreset == "Far" then
+        direction = -flatLook(root)
+    elseif State.VoidHidePreset == "Far Corner" then
+        direction =
+            unit(
+                -flatLook(root) +
+                unit(root.CFrame.RightVector)
+            )
+    elseif State.VoidHidePreset == "Deep Void" then
+        direction =
+            unit(
+                Vector3.new(
+                    -flatLook(root).X,
+                    -0.25,
+                    -flatLook(root).Z
+                )
+            )
+    elseif State.VoidHidePreset == "Extreme" then
+        direction = randomDirection()
+    else
+        direction =
+            Vector3.new(
+                1,
+                0,
+                1
+            ).Unit
+    end
+
+    return root.Position +
+        direction * distance +
+        Vector3.new(
+            0,
+            height,
+            0
+        )
+end
+
+local function enterVoidHide()
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    Runtime.VoidOrigin =
+        root.Position
+
+    Runtime.VoidHidePosition =
+        getVoidHidePosition(root)
+
+    teleport(
+        Runtime.VoidHidePosition
+    )
+end
+
+local function exitVoidHide()
+    local origin =
+        Runtime.VoidOrigin
+
+    Runtime.VoidHidePosition = nil
+    Runtime.VoidOrigin = nil
+
+    if State.VoidReturn and origin then
+        teleport(origin)
+    end
+end
+
+local function nearestTarget()
+    local root = getRoot()
+    if not root then
+        return nil
+    end
+
+    local closest = nil
+    local closestDistance = math.huge
+
+    for _, player in ipairs(
+        Players:GetPlayers()
+    ) do
+        if player ~= LocalPlayer then
+            local character =
+                player.Character
+
+            local humanoid =
+                character and
+                character:FindFirstChildOfClass(
+                    "Humanoid"
+                )
+
+            local targetRoot =
+                character and
+                character:FindFirstChild(
+                    "HumanoidRootPart"
+                )
+
+            if humanoid and
+                targetRoot and
+                humanoid.Health > 0 then
+
+                local distance =
+                    (
+                        targetRoot.Position -
+                        root.Position
+                    ).Magnitude
+
+                if distance <
+                    closestDistance then
+
+                    closestDistance =
+                        distance
+
+                    closest =
+                        targetRoot
+                end
+            end
+        end
+    end
+
+    return closest
+end
+
+local function orbitStep(dt)
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    local target = nearestTarget()
+    if not target then
+        return
+    end
+
+    local speed =
+        math.max(
+            1,
+            safeNumber(
+                State.OrbitSpeed,
+                12
+            )
+        )
+
+    Runtime.OrbitAngle +=
+        dt *
+        math.rad(
+            speed * 30
+        )
+
+    local distance =
+        clampDistance(
+            State.OrbitDistance
+        )
+
+    local height =
+        math.clamp(
+            safeNumber(
+                State.OrbitHeight,
+                0
+            ),
+            -getMaxDistance(),
+            getMaxDistance()
+        )
+
+    local offset =
+        Vector3.new(
+            math.cos(
+                Runtime.OrbitAngle
+            ) * distance,
+            height,
+            math.sin(
+                Runtime.OrbitAngle
+            ) * distance
+        )
+
+    teleport(
+        target.Position +
+        offset
+    )
+end
+
+local function phaseStep()
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    local target = nearestTarget()
+
+    local direction
+
+    if target then
+        direction =
+            unit(
+                target.Position -
+                root.Position,
+                flatLook(root)
+            )
+    else
+        direction =
+            flatLook(root)
+    end
+
+    teleport(
+        root.Position +
+        direction *
+        clampDistance(
+            State.PhaseDistance
+        )
+    )
+end
+
+local function cycloneStep(dt)
+    local root = getRoot()
+    if not root then
+        return
+    end
+
+    local target =
+        nearestTarget()
+
+    local center =
+        target and
+        target.Position or
+        root.Position
+
+    local speed =
+        math.max(
+            1,
+            safeNumber(
+                State.CycloneSpeed,
+                10
+            )
+        )
+
+    Runtime.CycloneAngle +=
+        dt *
+        math.rad(
+            speed * 35
+        )
+
+    local distance =
+        clampDistance(
+            State.CycloneDistance
+        )
+
+    local vertical =
+        math.sin(
+            Runtime.CycloneAngle * 2
+        ) *
+        math.min(
+            distance * 0.35,
+            1000
+        )
+
+    teleport(
+        center +
+        Vector3.new(
+            math.cos(
+                Runtime.CycloneAngle
+            ) * distance,
+            vertical,
+            math.sin(
+                Runtime.CycloneAngle
+            ) * distance
+        )
+    )
+end
+
+local function riftPoint(origin, index)
+    local root = getRoot()
+    if not root then
+        return origin
+    end
+
+    local distance =
+        clampDistance(
+            State.RiftDistance
+        )
+
+    local height =
+        math.clamp(
+            safeNumber(
+                State.RiftHeight,
+                100
+            ),
+            -getMaxDistance(),
+            getMaxDistance()
+        )
+
+    local steps =
+        math.max(
+            1,
+            math.floor(
+                safeNumber(
+                    State.RiftSteps,
+                    8
+                )
+            )
+        )
+
+    if State.RiftPattern == "Line" then
+        return origin +
+            flatLook(root) *
+            distance *
+            index
+    end
+
+    if State.RiftPattern == "Zigzag" then
+        local forward =
+            flatLook(root)
+
+        local right =
+            unit(
+                root.CFrame.RightVector
+            )
+
+        local side =
+            (
+                index % 2 == 0
+                and 1
+                or -1
+            ) *
+            distance *
+            0.45
+
+        return origin +
+            forward *
+            distance *
+            index +
+            right * side +
+            Vector3.new(
+                0,
+                math.sin(index) *
+                height,
+                0
+            )
+    end
+
+    if State.RiftPattern == "Arc" then
+        local progress =
+            index / steps
+
+        local angle =
+            math.rad(
+                safeNumber(
+                    State.RiftSpread,
+                    90
+                )
+            ) *
+            progress
+
+        local radius =
+            distance * index
+
+        return origin +
+            Vector3.new(
+                math.cos(angle) *
+                radius,
+                math.sin(angle) *
+                height,
+                math.sin(angle) *
+                radius
+            )
+    end
+
+    if State.RiftPattern == "Spiral" then
+        local angle =
+            index *
+            math.rad(
+                math.max(
+                    10,
+                    safeNumber(
+                        State.RiftSpread,
+                        90
+                    )
+                )
+            )
+
+        local radius =
+            distance * index
+
+        return origin +
+            Vector3.new(
+                math.cos(angle) *
+                radius,
+                math.sin(
+                    index * 0.7
+                ) * height,
+                math.sin(angle) *
+                radius
+            )
+    end
+
+    return origin +
+        spreadDirection(
+            randomDirection(),
+            State.RiftSpread
+        ) *
+        distance *
+        index +
+        Vector3.new(
+            0,
+            randomFloat(
+                -height,
+                height
+            ),
+            0
+        )
+end
+
+local function riftDash()
+    if Runtime.RiftBusy then
+        return
+    end
+
+    Runtime.RiftBusy = true
+
+    pcall(function()
+        local root = getRoot()
+        if not root then
+            return
+        end
+
+        local origin =
+            root.Position
+
+        local points = {}
+
+        local steps =
+            math.clamp(
+                math.floor(
+                    safeNumber(
+                        State.RiftSteps,
+                        8
+                    )
+                ),
+                1,
+                50
+            )
+
+        for index = 1, steps do
+            points[index] =
+                riftPoint(
+                    origin,
+                    index
+                )
+        end
+
+        local speed =
+            math.max(
+                1,
+                safeNumber(
+                    State.RiftSpeed,
+                    18
+                )
+            )
+
+        local delay =
+            math.max(
+                MIN_INTERVAL,
+                1 / speed
+            )
+
+        if State.RiftReverse then
+            for index = #points, 1, -1 do
+                if not State.RiftSurge then
+                    break
+                end
+
+                teleport(
+                    points[index]
+                )
+
+                task.wait(
+                    getTeleportInterval(
+                        delay
+                    )
+                )
+            end
+        else
+            for index = 1, #points do
+                if not State.RiftSurge then
+                    break
+                end
+
+                teleport(
+                    points[index]
+                )
+
+                task.wait(
+                    getTeleportInterval(
+                        delay
+                    )
+                )
+            end
+        end
+
+        if State.RiftReturn then
+            teleport(origin)
+        end
+    end)
+
+    Runtime.RiftBusy = false
+end
+
+local function copyState()
+    local data = {}
+
+    for key, value in pairs(State) do
+        if typeof(value) ~= "table" then
+            data[key] = value
+        end
+    end
+
+    return data
+end
+
+local function refreshConfigList()
+    local names = {}
+
+    for name in pairs(Runtime.Configs) do
+        table.insert(names, name)
+    end
+
+    if #names == 0 then
+        names = {"Default"}
+    end
+
+    table.sort(names)
+
+    if Runtime.Dropdowns.ConfigList then
+        pcall(function()
+            Runtime.Dropdowns.ConfigList:SetValues(
+                names
+            )
+        end)
+
+        pcall(function()
+            Runtime.Dropdowns.ConfigList:SetValue(
+                State.ConfigName
+            )
+        end)
+    end
+end
+
+local function saveConfig(name)
+    name = tostring(
+        name or "Default"
+    )
+
+    if name:gsub("%s+", "") == "" then
+        name = "Default"
+    end
+
+    State.ConfigName = name
+    Runtime.Configs[name] =
+        copyState()
+
+    refreshConfigList()
+end
+
+local function syncUI()
+    local function setToggle(id, value)
+        local object =
+            Runtime.Toggles[id]
+
+        if object then
+            pcall(function()
+                object:SetValue(value)
+            end)
+        end
+    end
+
+    local function setSlider(id, value)
+        local object =
+            Runtime.Sliders[id]
+
+        if object then
+            pcall(function()
+                object:SetValue(value)
+            end)
+        end
+    end
+
+    local function setDropdown(id, value)
+        local object =
+            Runtime.Dropdowns[id]
+
+        if object then
+            pcall(function()
+                object:SetValue(value)
+            end)
+        end
+    end
+
+    local function setInput(id, value)
+        local object =
+            Runtime.Inputs[id]
+
+        if object then
+            pcall(function()
+                object:SetValue(value)
+            end)
+        end
+    end
+
+    setToggle("EnhancerToggle", State.Enhancer)
+    setToggle("ResetVelocity", State.ResetVelocity)
+    setToggle("PreserveFacing", State.PreserveFacing)
+    setToggle("GroundAssist", State.GroundAssist)
+    setToggle("CollisionSafe", State.CollisionSafe)
+    setToggle("DestinationCheck", State.DestinationCheck)
+    setToggle("SmoothSnap", State.SmoothSnap)
+    setToggle("MicroRandom", State.MicroRandom)
+    setToggle("RetryTeleport", State.RetryTeleport)
+
+    setSlider("MicroRandomAmount", State.MicroRandomAmount)
+    setSlider("SnapSteps", State.SnapSteps)
+    setSlider("TeleportCooldown", State.TeleportCooldown)
+    setSlider("RetryCount", State.RetryCount)
+    setSlider("GlobalMaxDistance", State.GlobalMaxDistance)
+
+    setDropdown("EnhancerStyle", State.EnhancerStyle)
+    setSlider("SpeedMultiplier", State.SpeedMultiplier)
+    setSlider("DistanceMultiplier", State.DistanceMultiplier)
+    setSlider("TeleportPower", State.TeleportPower)
+    setSlider("SafeOffset", State.SafeOffset)
+    setToggle("AdaptiveDistance", State.AdaptiveDistance)
+    setSlider("AdaptiveThreshold", State.AdaptiveThreshold)
+    setSlider("AdaptiveSteps", State.AdaptiveSteps)
+    setToggle("AntiJitter", State.AntiJitter)
+    setSlider("JitterThreshold", State.JitterThreshold)
+    setToggle("Recovery", State.Recovery)
+    setSlider("RecoveryTolerance", State.RecoveryTolerance)
+    setDropdown("FacingMode", State.FacingMode)
+    setDropdown("VelocityMode", State.VelocityMode)
+    setDropdown("SmoothMode", State.SmoothMode)
+
+    setToggle("NormalTeleportToggle", State.NormalTeleport)
+    setSlider("NormalDistance", State.NormalDistance)
+    setDropdown("NormalDirection", State.NormalDirection)
+    setSlider("NormalInterval", State.NormalInterval)
+
+    setToggle("VoidSpamToggle", State.VoidSpam)
+    setDropdown("VoidAxisMode", State.VoidAxis)
+    setSlider("VoidX", State.VoidX)
+    setSlider("VoidY", State.VoidY)
+    setSlider("VoidZ", State.VoidZ)
+    setSlider("VoidSpeed", State.VoidSpeed)
+    setSlider("VoidDelay", State.VoidDelay)
+
+    setToggle("RandomTeleportToggle", State.RandomTeleport)
+    setSlider("RandomMin", State.RandomMin)
+    setSlider("RandomMax", State.RandomMax)
+    setSlider("RandomVertical", State.RandomVertical)
+    setSlider("RandomDelay", State.RandomDelay)
+
+    setToggle("CustomTeleportToggle", State.CustomTeleport)
+    setSlider("CustomX", State.CustomX)
+    setSlider("CustomY", State.CustomY)
+    setSlider("CustomZ", State.CustomZ)
+    setSlider("CustomInterval", State.CustomInterval)
+
+    setToggle("UnpredictableToggle", State.Unpredictable)
+    setSlider("UnpredictableCount", State.UnpredictableCount)
+    setSlider("UnpredictableMin", State.UnpredictableMin)
+    setSlider("UnpredictableMax", State.UnpredictableMax)
+    setSlider("UnpredictableVertical", State.UnpredictableVertical)
+    setSlider("UnpredictableSpread", State.UnpredictableSpread)
+    setSlider("UnpredictableDelay", State.UnpredictableDelay)
+
+    setDropdown("UnpredictableStyle", State.UnpredictableStyle)
+    setDropdown("UnpredictablePattern", State.UnpredictablePattern)
+    setDropdown("UnpredictableDirection", State.UnpredictableDirection)
+    setSlider("UnpredictableBurst", State.UnpredictableBurst)
+    setSlider("UnpredictableAcceleration", State.UnpredictableAcceleration)
+    setDropdown("UnpredictableHeightMode", State.UnpredictableHeightMode)
+    setDropdown("UnpredictableDistanceMode", State.UnpredictableDistanceMode)
+    setSlider("UnpredictableCalmness", State.UnpredictableCalmness)
+    setSlider("UnpredictableChaos", State.UnpredictableChaos)
+    setToggle("UnpredictableMomentum", State.UnpredictableMomentum)
+    setToggle("UnpredictableReturn", State.UnpredictableReturn)
+
+    setToggle("FrameSkipperToggle", State.FrameSkipper)
+    setSlider("SkippedFrames", State.SkippedFrames)
+    setDropdown("FrameMode", State.FrameMode)
+    setSlider("FrameSkipDistance", State.SkipDistance)
+    setDropdown("FrameSkipDirection", State.SkipDirection)
+    setSlider("FrameRandomMin", State.FrameRandomMin)
+    setSlider("FrameRandomMax", State.FrameRandomMax)
+    setSlider("FrameRandomVertical", State.FrameRandomVertical)
+    setSlider("FrameRandomSpread", State.FrameRandomSpread)
+
+    setDropdown("FramePattern", State.FramePattern)
+    setSlider("FrameBurst", State.FrameBurst)
+    setSlider("FrameSpeed", State.FrameSpeed)
+    setToggle("FrameAdaptive", State.FrameAdaptive)
+    setSlider("FrameAdaptiveScale", State.FrameAdaptiveScale)
+    setSlider("FrameDistanceVariance", State.FrameDistanceVariance)
+    setSlider("FrameDirectionVariance", State.FrameDirectionVariance)
+    setSlider("FrameVerticalVariance", State.FrameVerticalVariance)
+    setSlider("FrameReverseChance", State.FrameReverseChance)
+    setToggle("FrameChain", State.FrameChain)
+    setSlider("FrameChainLength", State.FrameChainLength)
+    setSlider("FramePhaseOffset", State.FramePhaseOffset)
+
+    setToggle("VoidHideToggle", State.VoidHide)
+    setDropdown("VoidHidePreset", State.VoidHidePreset)
+    setSlider("VoidHideDistance", State.VoidHideDistance)
+    setSlider("VoidHideHeight", State.VoidHideHeight)
+    setToggle("VoidStayFloating", State.VoidStayFloating)
+    setToggle("VoidReturn", State.VoidReturn)
+
+    setToggle("OrbitToggle", State.Orbit)
+    setSlider("OrbitDistance", State.OrbitDistance)
+    setSlider("OrbitSpeed", State.OrbitSpeed)
+    setSlider("OrbitHeight", State.OrbitHeight)
+
+    setToggle("PhaseMatrixToggle", State.PhaseMatrix)
+    setSlider("PhaseDistance", State.PhaseDistance)
+    setSlider("PhaseSpeed", State.PhaseSpeed)
+
+    setToggle("CycloneToggle", State.CycloneDrive)
+    setSlider("CycloneDistance", State.CycloneDistance)
+    setSlider("CycloneSpeed", State.CycloneSpeed)
+
+    setToggle("RiftSurgeToggle", State.RiftSurge)
+    setDropdown("RiftPattern", State.RiftPattern)
+    setSlider("RiftSteps", State.RiftSteps)
+    setSlider("RiftDistance", State.RiftDistance)
+    setSlider("RiftSpread", State.RiftSpread)
+    setSlider("RiftHeight", State.RiftHeight)
+    setSlider("RiftSpeed", State.RiftSpeed)
+    setToggle("RiftReverse", State.RiftReverse)
+    setToggle("RiftReturn", State.RiftReturn)
+    setSlider("RiftInterval", State.RiftInterval)
+
+    setInput("ConfigNameInput", State.ConfigName)
+
+    refreshConfigList()
+end
+
+local function loadConfig(name)
+    name = tostring(
+        name or State.ConfigName
+    )
+
+    local data =
+        Runtime.Configs[name]
+
+    if not data then
+        return false
+    end
+
+    local oldVoidHide =
+        State.VoidHide
+
+    if oldVoidHide then
+        State.VoidHide = false
+        exitVoidHide()
+    end
+
+    for key, value in pairs(data) do
+        if State[key] ~= nil then
+            State[key] = value
+        end
+    end
+
+    State.ConfigName = name
+
+    Runtime.VoidAxisIndex = 1
+    Runtime.FrameCounter = 0
+    Runtime.FrameSequence = 0
+    Runtime.FrameBurstCounter = 0
+    Runtime.FramePatternIndex = 0
+    Runtime.OrbitAngle = 0
+    Runtime.CycloneAngle = 0
+    Runtime.UnpredictableSequence = 0
+    Runtime.LastTeleport = 0
+    Runtime.LastDestination = nil
+    Runtime.LastPosition = nil
+    Runtime.LastDirection = nil
+    Runtime.LastFramePosition = nil
+
+    syncUI()
+
+    if State.VoidHide then
+        task.defer(
+            enterVoidHide
+        )
+    end
+
+    return true
+end
+
+local function deleteConfig(name)
+    name = tostring(
+        name or State.ConfigName
+    )
+
+    if name == "Default" then
+        return false
+    end
+
+    Runtime.Configs[name] = nil
+
+    if State.ConfigName == name then
+        State.ConfigName = "Default"
+    end
+
+    refreshConfigList()
+
+    return true
+end
+
+local function disableAll()
+    local wasVoidHide =
+        State.VoidHide
+
+    State.NormalTeleport = false
+    State.VoidSpam = false
+    State.RandomTeleport = false
+    State.CustomTeleport = false
+    State.Unpredictable = false
+    State.FrameSkipper = false
+    State.Orbit = false
+    State.PhaseMatrix = false
+    State.CycloneDrive = false
+    State.RiftSurge = false
+    State.VoidHide = false
+
+    if wasVoidHide then
+        exitVoidHide()
+    end
+
+    Runtime.UnpredictableBusy = false
+    Runtime.RiftBusy = false
+    Runtime.TeleportBusy = false
+    Runtime.FrameCounter = 0
+    Runtime.FrameSequence = 0
+    Runtime.FrameBurstCounter = 0
+    Runtime.FramePatternIndex = 0
+
+    syncUI()
+end
+
+local function toggle(group, id, text, default, callback)
+    local object =
+        group:AddToggle(
+            id,
+            {
+                Text = text,
+                Default = default,
+                Callback = callback
+            }
+        )
+
+    Runtime.Toggles[id] =
+        object
+
+    return object
+end
+
+local function slider(
+    group,
+    id,
+    text,
+    default,
+    minimum,
+    maximum,
+    callback
+)
+    local object =
+        group:AddSlider(
+            id,
+            {
+                Text = text,
+                Default = default,
+                Min = minimum,
+                Max = maximum,
+                Rounding = 3,
+                Compact = true,
+                Callback = callback
+            }
+        )
+
+    Runtime.Sliders[id] =
+        object
+
+    return object
+end
+
+local function dropdown(
+    group,
+    id,
+    values,
+    default,
+    text,
+    callback
+)
+    local object =
+        group:AddDropdown(
+            id,
+            {
+                Values = values,
+                Default = default,
+                Text = text,
+                Callback = callback
+            }
+        )
+
+    Runtime.Dropdowns[id] =
+        object
+
+    return object
+end
+
+local function input(
+    group,
+    id,
+    default,
+    text,
+    callback
+)
+    local object =
+        group:AddInput(
+            id,
+            {
+                Default = default,
+                Numeric = false,
+                Finished = true,
+                Text = text,
+                Placeholder = text,
+                Callback = callback
+            }
+        )
+
+    Runtime.Inputs[id] =
+        object
+
+    return object
+end
+
+local VoidTab =
+    Window:AddTab(
+        "Void Spam",
+        "zap"
+    )
+
+local TeleportTab =
+    Window:AddTab(
+        "Teleport",
+        "map-pin"
+    )
+
+local AdvancedTab =
+    Window:AddTab(
+        "Advanced",
+        "shuffle"
+    )
+
+local PhasingTab =
+    Window:AddTab(
+        "Phasing",
+        "layers"
+    )
+
+local OrbitTab =
+    Window:AddTab(
+        "Orbit",
+        "rotate-cw"
+    )
+
+local RiftTab =
+    Window:AddTab(
+        "Rift Surge",
+        "sparkles"
+    )
+
+local EnhancerTab =
+    Window:AddTab(
+        "Teleport Enhancer",
+        "gauge"
+    )
+
+local SettingsTab =
+    Window:AddTab(
+        "Settings",
+        "settings"
+    )
+
+local VoidBox =
+    VoidTab:AddLeftGroupbox(
+        "Void Spam"
+    )
+
+toggle(
+    VoidBox,
+    "VoidSpamToggle",
+    "Void Spam",
+    false,
+    function(value)
+        State.VoidSpam = value
+        Runtime.VoidAxisIndex = 1
+    end
+)
+
+dropdown(
+    VoidBox,
+    "VoidAxisMode",
+    {
+        "X",
+        "Y",
+        "Z",
+        "XYZ"
+    },
+    "XYZ",
+    "Axis Mode",
+    function(value)
+        State.VoidAxis = value
+        Runtime.VoidAxisIndex = 1
+    end
+)
+
+slider(VoidBox,"VoidX","Void X",100,0,MAX_DISTANCE,function(v) State.VoidX=v end)
+slider(VoidBox,"VoidY","Void Y",100,0,MAX_DISTANCE,function(v) State.VoidY=v end)
+slider(VoidBox,"VoidZ","Void Z",100,0,MAX_DISTANCE,function(v) State.VoidZ=v end)
+slider(VoidBox,"VoidSpeed","Speed",100,1,5000,function(v) State.VoidSpeed=v end)
+slider(VoidBox,"VoidDelay","Delay",0.02,MIN_INTERVAL,0.5,function(v) State.VoidDelay=v end)
+
+local HideBox =
+    VoidTab:AddRightGroupbox(
+        "Void Hide"
+    )
+
+toggle(HideBox,"VoidHideToggle","Void Hide",false,function(value)
+    State.VoidHide=value
+    if value then
+        enterVoidHide()
+    else
+        exitVoidHide()
+    end
+end)
+
+dropdown(HideBox,"VoidHidePreset",{"Near","Far","Far Corner","Deep Void","Extreme","Custom"},"Far Corner","Preset",function(value)
+    State.VoidHidePreset=value
+    if State.VoidHide then enterVoidHide() end
+end)
+
+slider(HideBox,"VoidHideDistance","Distance",1000,0,MAX_DISTANCE,function(v) State.VoidHideDistance=v end)
+slider(HideBox,"VoidHideHeight","Height",0,-MAX_DISTANCE,MAX_DISTANCE,function(v) State.VoidHideHeight=v end)
+toggle(HideBox,"VoidStayFloating","Stay Floating",true,function(v) State.VoidStayFloating=v end)
+toggle(HideBox,"VoidReturn","Return On Exit",true,function(v) State.VoidReturn=v end)
+
+local NormalBox =
+    TeleportTab:AddLeftGroupbox(
+        "Normal Teleport"
+    )
+
+toggle(NormalBox,"NormalTeleportToggle","Normal Teleport",false,function(v) State.NormalTeleport=v end)
+slider(NormalBox,"NormalDistance","Distance",100,0,MAX_DISTANCE,function(v) State.NormalDistance=v end)
+dropdown(NormalBox,"NormalDirection",{"Look","Back","Left","Right","Up","Down"},"Look","Direction",function(v) State.NormalDirection=v end)
+slider(NormalBox,"NormalInterval","Interval",0.05,MIN_INTERVAL,1,function(v) State.NormalInterval=v end)
+
+NormalBox:AddButton({
+    Text = "Teleport Now",
+    Func = normalStep
+})
+
+local RandomBox =
+    TeleportTab:AddRightGroupbox(
+        "Random Teleport"
+    )
+
+toggle(RandomBox,"RandomTeleportToggle","Random Teleport",false,function(v) State.RandomTeleport=v end)
+slider(RandomBox,"RandomMin","Min Distance",50,0,MAX_DISTANCE,function(v) State.RandomMin=v end)
+slider(RandomBox,"RandomMax","Max Distance",500,0,MAX_DISTANCE,function(v) State.RandomMax=v end)
+slider(RandomBox,"RandomVertical","Vertical",100,0,MAX_DISTANCE,function(v) State.RandomVertical=v end)
+slider(RandomBox,"RandomDelay","Interval",0.08,MIN_INTERVAL,1,function(v) State.RandomDelay=v end)
+
+local CustomBox =
+    TeleportTab:AddLeftGroupbox(
+        "Custom Teleport"
+    )
+
+toggle(CustomBox,"CustomTeleportToggle","Custom Teleport",false,function(v) State.CustomTeleport=v end)
+slider(CustomBox,"CustomX","X",0,-MAX_DISTANCE,MAX_DISTANCE,function(v) State.CustomX=v end)
+slider(CustomBox,"CustomY","Y",0,-MAX_DISTANCE,MAX_DISTANCE,function(v) State.CustomY=v end)
+slider(CustomBox,"CustomZ","Z",100,-MAX_DISTANCE,MAX_DISTANCE,function(v) State.CustomZ=v end)
+slider(CustomBox,"CustomInterval","Interval",0.05,MIN_INTERVAL,1,function(v) State.CustomInterval=v end)
+
+CustomBox:AddButton({
+    Text = "Teleport Custom Now",
+    Func = customStep
+})
+
+local UnpredictableBox =
+    AdvancedTab:AddLeftGroupbox(
+        "Unpredictable"
+    )
+
+toggle(UnpredictableBox,"UnpredictableToggle","Unpredictable",false,function(v)
+    State.Unpredictable=v
+    Runtime.UnpredictableSequence=0
+end)
+
+dropdown(
+    UnpredictableBox,
+    "UnpredictableStyle",
+    {
+        "Chaos",
+        "Calm",
+        "Controlled",
+        "Wave"
+    },
+    "Chaos",
+    "Style",
+    function(v)
+        State.UnpredictableStyle=v
+    end
+)
+
+dropdown(
+    UnpredictableBox,
+    "UnpredictablePattern",
+    {
+        "Random",
+        "Alternating",
+        "Zigzag",
+        "Wave",
+        "Burst"
+    },
+    "Random",
+    "Pattern",
+    function(v)
+        State.UnpredictablePattern=v
+    end
+)
+
+dropdown(
+    UnpredictableBox,
+    "UnpredictableDirection",
+    {
+        "All",
+        "Look",
+        "Back",
+        "Side",
+        "Vertical"
+    },
+    "All",
+    "Direction",
+    function(v)
+        State.UnpredictableDirection=v
+    end
+)
+
+slider(UnpredictableBox,"UnpredictableCount","Count",5,1,100,function(v) State.UnpredictableCount=v end)
+slider(UnpredictableBox,"UnpredictableMin","Min Distance",50,0,MAX_DISTANCE,function(v) State.UnpredictableMin=v end)
+slider(UnpredictableBox,"UnpredictableMax","Max Distance",1000,0,MAX_DISTANCE,function(v) State.UnpredictableMax=v end)
+slider(UnpredictableBox,"UnpredictableVertical","Vertical",300,0,MAX_DISTANCE,function(v) State.UnpredictableVertical=v end)
+slider(UnpredictableBox,"UnpredictableSpread","Spread",180,0,180,function(v) State.UnpredictableSpread=v end)
+slider(UnpredictableBox,"UnpredictableDelay","Delay",0.025,MIN_INTERVAL,1,function(v) State.UnpredictableDelay=v end)
+
+slider(UnpredictableBox,"UnpredictableBurst","Burst Size",2,1,10,function(v) State.UnpredictableBurst=v end)
+slider(UnpredictableBox,"UnpredictableAcceleration","Acceleration",1,0,10,function(v) State.UnpredictableAcceleration=v end)
+
+dropdown(
+    UnpredictableBox,
+    "UnpredictableHeightMode",
+    {
+        "Random",
+        "Flat",
+        "High",
+        "Low"
+    },
+    "Random",
+    "Height Mode",
+    function(v)
+        State.UnpredictableHeightMode=v
+    end
+)
+
+dropdown(
+    UnpredictableBox,
+    "UnpredictableDistanceMode",
+    {
+        "Random",
+        "Min",
+        "Max",
+        "Center"
+    },
+    "Random",
+    "Distance Mode",
+    function(v)
+        State.UnpredictableDistanceMode=v
+    end
+)
+
+slider(UnpredictableBox,"UnpredictableCalmness","Calmness",50,0,100,function(v) State.UnpredictableCalmness=v end)
+slider(UnpredictableBox,"UnpredictableChaos","Chaos",75,0,100,function(v) State.UnpredictableChaos=v end)
+
+toggle(UnpredictableBox,"UnpredictableMomentum","Momentum",false,function(v) State.UnpredictableMomentum=v end)
+toggle(UnpredictableBox,"UnpredictableReturn","Return",false,function(v) State.UnpredictableReturn=v end)
+
+local FrameBox =
+    AdvancedTab:AddRightGroupbox(
+        "Frame Skipper"
+    )
+
+toggle(FrameBox,"FrameSkipperToggle","Frame Skipper",false,function(v)
+    State.FrameSkipper=v
+    Runtime.FrameCounter=0
+    Runtime.FrameBurstCounter=0
+    Runtime.FramePatternIndex=0
+end)
+
+slider(FrameBox,"SkippedFrames","Skipped Frames",1,1,60,function(v)
+    State.SkippedFrames=math.floor(v)
+end)
+
+dropdown(FrameBox,"FrameMode",{"Direction","Random"},"Direction","Mode",function(v) State.FrameMode=v end)
+
+dropdown(
+    FrameBox,
+    "FramePattern",
+    {
+        "Forward",
+        "Backward",
+        "Alternating",
+        "Zigzag",
+        "Left",
+        "Right",
+        "Sideways",
+        "Circle",
+        "Random"
+    },
+    "Alternating",
+    "Pattern",
+    function(v)
+        State.FramePattern=v
+    end
+)
+
+slider(FrameBox,"FrameSkipDistance","Skip Distance",100,0,MAX_DISTANCE,function(v) State.SkipDistance=v end)
+
+dropdown(
+    FrameBox,
+    "FrameSkipDirection",
+    {
+        "Look",
+        "Back",
+        "Left",
+        "Right",
+        "Up",
+        "Down"
+    },
+    "Look",
+    "Direction",
+    function(v)
+        State.SkipDirection=v
+    end
+)
+
+slider(FrameBox,"FrameRandomMin","Random Min",50,0,MAX_DISTANCE,function(v) State.FrameRandomMin=v end)
+slider(FrameBox,"FrameRandomMax","Random Max",500,0,MAX_DISTANCE,function(v) State.FrameRandomMax=v end)
+slider(FrameBox,"FrameRandomVertical","Random Vertical",100,0,MAX_DISTANCE,function(v) State.FrameRandomVertical=v end)
+slider(FrameBox,"FrameRandomSpread","Random Spread",180,0,180,function(v) State.FrameRandomSpread=v end)
+
+slider(FrameBox,"FrameBurst","Burst",1,1,20,function(v) State.FrameBurst=v end)
+slider(FrameBox,"FrameSpeed","Speed",2,1,100,function(v) State.FrameSpeed=v end)
+
+toggle(FrameBox,"FrameAdaptive","Adaptive Distance",true,function(v) State.FrameAdaptive=v end)
+slider(FrameBox,"FrameAdaptiveScale","Adaptive Scale",1,0,10,function(v) State.FrameAdaptiveScale=v end)
+slider(FrameBox,"FrameDistanceVariance","Distance Variance",25,0,100,function(v) State.FrameDistanceVariance=v end)
+slider(FrameBox,"FrameDirectionVariance","Direction Variance",45,0,180,function(v) State.FrameDirectionVariance=v end)
+slider(FrameBox,"FrameVerticalVariance","Vertical Variance",25,0,100,function(v) State.FrameVerticalVariance=v end)
+slider(FrameBox,"FrameReverseChance","Reverse Chance",20,0,100,function(v) State.FrameReverseChance=v end)
+
+toggle(FrameBox,"FrameChain","Frame Chain",false,function(v)
+    State.FrameChain=v
+    Runtime.FramePatternIndex=0
+end)
+
+slider(FrameBox,"FrameChainLength","Chain Length",3,1,20,function(v) State.FrameChainLength=v end)
+slider(FrameBox,"FramePhaseOffset","Phase Offset",0,0,60,function(v) State.FramePhaseOffset=v end)
+
+local OrbitBox =
+    OrbitTab:AddLeftGroupbox(
+        "Orbit"
+    )
+
+toggle(OrbitBox,"OrbitToggle","Orbit",false,function(v) State.Orbit=v end)
+slider(OrbitBox,"OrbitDistance","Distance",100,0,MAX_DISTANCE,function(v) State.OrbitDistance=v end)
+slider(OrbitBox,"OrbitSpeed","Speed",12,1,500,function(v) State.OrbitSpeed=v end)
+slider(OrbitBox,"OrbitHeight","Height",0,-MAX_DISTANCE,MAX_DISTANCE,function(v) State.OrbitHeight=v end)
+
+local PhaseBox =
+    PhasingTab:AddLeftGroupbox(
+        "Phase Matrix"
+    )
+
+toggle(PhaseBox,"PhaseMatrixToggle","Phase Matrix",false,function(v) State.PhaseMatrix=v end)
+slider(PhaseBox,"PhaseDistance","Distance",500,0,MAX_DISTANCE,function(v) State.PhaseDistance=v end)
+slider(PhaseBox,"PhaseSpeed","Speed",8,1,500,function(v) State.PhaseSpeed=v end)
+
+local CycloneBox =
+    PhasingTab:AddRightGroupbox(
+        "Cyclone Drive"
+    )
+
+toggle(CycloneBox,"CycloneToggle","Cyclone Drive",false,function(v) State.CycloneDrive=v end)
+slider(CycloneBox,"CycloneDistance","Distance",500,0,MAX_DISTANCE,function(v) State.CycloneDistance=v end)
+slider(CycloneBox,"CycloneSpeed","Speed",10,1,500,function(v) State.CycloneSpeed=v end)
+
+local RiftBox =
+    RiftTab:AddLeftGroupbox(
+        "Rift Surge"
+    )
+
+toggle(RiftBox,"RiftSurgeToggle","Rift Surge",false,function(v) State.RiftSurge=v end)
+
+dropdown(
+    RiftBox,
+    "RiftPattern",
+    {
+        "Line",
+        "Zigzag",
+        "Arc",
+        "Spiral",
+        "Random"
+    },
+    "Zigzag",
+    "Pattern",
+    function(v)
+        State.RiftPattern=v
+    end
+)
+
+slider(RiftBox,"RiftSteps","Steps",8,1,50,function(v) State.RiftSteps=v end)
+slider(RiftBox,"RiftDistance","Distance",1000,0,MAX_DISTANCE,function(v) State.RiftDistance=v end)
+slider(RiftBox,"RiftSpread","Spread",90,0,180,function(v) State.RiftSpread=v end)
+slider(RiftBox,"RiftHeight","Height",100,-MAX_DISTANCE,MAX_DISTANCE,function(v) State.RiftHeight=v end)
+slider(RiftBox,"RiftSpeed","Speed",18,1,500,function(v) State.RiftSpeed=v end)
+
+toggle(RiftBox,"RiftReverse","Reverse Route",false,function(v) State.RiftReverse=v end)
+toggle(RiftBox,"RiftReturn","Return",false,function(v) State.RiftReturn=v end)
+
+slider(RiftBox,"RiftInterval","Loop Interval",0.15,0.01,2,function(v) State.RiftInterval=v end)
+
+RiftBox:AddButton({
+    Text = "Rift Dash Now",
+    Func = function()
+        task.spawn(riftDash)
+    end
+})
+
+local EnhancerLeft =
+    EnhancerTab:AddLeftGroupbox(
+        "Teleport Enhancer"
+    )
+
+toggle(EnhancerLeft,"EnhancerToggle","Teleport Enhancer",true,function(v) State.Enhancer=v end)
+toggle(EnhancerLeft,"ResetVelocity","Reset Velocity",true,function(v) State.ResetVelocity=v end)
+toggle(EnhancerLeft,"PreserveFacing","Preserve Facing",true,function(v) State.PreserveFacing=v end)
+toggle(EnhancerLeft,"GroundAssist","Ground Assist",false,function(v) State.GroundAssist=v end)
+toggle(EnhancerLeft,"CollisionSafe","Collision Safe",false,function(v) State.CollisionSafe=v end)
+toggle(EnhancerLeft,"DestinationCheck","Destination Check",true,function(v) State.DestinationCheck=v end)
+toggle(EnhancerLeft,"SmoothSnap","Smooth Snap",false,function(v) State.SmoothSnap=v end)
+
+dropdown(
+    EnhancerLeft,
+    "EnhancerStyle",
+    {
+        "Balanced",
+        "Fast",
+        "Precision",
+        "Smooth",
+        "Aggressive",
+        "Dynamic"
+    },
+    "Balanced",
+    "Teleport Style",
+    function(v)
+        State.EnhancerStyle=v
+    end
+)
+
+dropdown(
+    EnhancerLeft,
+    "SmoothMode",
+    {
+        "Instant",
+        "Stepped",
+        "Smooth"
+    },
+    "Instant",
+    "Movement Mode",
+    function(v)
+        State.SmoothMode=v
+    end
+)
+
+slider(EnhancerLeft,"SnapSteps","Snap Steps",3,1,30,function(v) State.SnapSteps=math.floor(v) end)
+
+toggle(EnhancerLeft,"MicroRandom","Micro Randomization",false,function(v) State.MicroRandom=v end)
+slider(EnhancerLeft,"MicroRandomAmount","Random Amount",2,0,100,function(v) State.MicroRandomAmount=v end)
+
+toggle(EnhancerLeft,"RetryTeleport","Teleport Retry",true,function(v) State.RetryTeleport=v end)
+slider(EnhancerLeft,"RetryCount","Retry Count",3,1,10,function(v) State.RetryCount=math.floor(v) end)
+
+local EnhancerRight =
+    EnhancerTab:AddRightGroupbox(
+        "Teleport Control"
+    )
+
+slider(EnhancerRight,"SpeedMultiplier","Speed Multiplier",1,0.05,100,function(v) State.SpeedMultiplier=v end)
+slider(EnhancerRight,"DistanceMultiplier","Distance Multiplier",1,0.05,5,function(v) State.DistanceMultiplier=v end)
+slider(EnhancerRight,"TeleportPower","Teleport Power",1,0.05,5,function(v) State.TeleportPower=v end)
+slider(EnhancerRight,"SafeOffset","Safe Offset",0,0,100,function(v) State.SafeOffset=v end)
+
+toggle(EnhancerRight,"AdaptiveDistance","Adaptive Distance",false,function(v) State.AdaptiveDistance=v end)
+slider(EnhancerRight,"AdaptiveThreshold","Adaptive Threshold",5000,10,MAX_DISTANCE,function(v) State.AdaptiveThreshold=v end)
+slider(EnhancerRight,"AdaptiveSteps","Adaptive Steps",4,1,20,function(v) State.AdaptiveSteps=math.floor(v) end)
+
+toggle(EnhancerRight,"AntiJitter","Anti-Jitter",true,function(v) State.AntiJitter=v end)
+slider(EnhancerRight,"JitterThreshold","Jitter Threshold",2,0,100,function(v) State.JitterThreshold=v end)
+
+toggle(EnhancerRight,"Recovery","Teleport Recovery",true,function(v) State.Recovery=v end)
+slider(EnhancerRight,"RecoveryTolerance","Recovery Tolerance",8,1,100,function(v) State.RecoveryTolerance=v end)
+
+dropdown(
+    EnhancerRight,
+    "FacingMode",
+    {
+        "Preserve",
+        "Destination",
+        "Movement",
+        "Reverse"
+    },
+    "Preserve",
+    "Facing Mode",
+    function(v)
+        State.FacingMode=v
+    end
+)
+
+dropdown(
+    EnhancerRight,
+    "VelocityMode",
+    {
+        "Reset",
+        "Soft",
+        "Preserve",
+        "Forward"
+    },
+    "Reset",
+    "Velocity Mode",
+    function(v)
+        State.VelocityMode=v
+    end
+)
+
+slider(EnhancerRight,"TeleportCooldown","Cooldown",0,0,1,function(v) State.TeleportCooldown=v end)
+slider(EnhancerRight,"GlobalMaxDistance","Max Distance",MAX_DISTANCE,1,MAX_DISTANCE,function(v) State.GlobalMaxDistance=v end)
+
+EnhancerRight:AddLabel(
+    "All teleport systems use the same enhancement pipeline."
+)
+
+EnhancerRight:AddLabel(
+    "Style, speed, distance, power, recovery and movement mode are active."
+)
+
+local ConfigBox =
+    SettingsTab:AddLeftGroupbox(
+        "Configs"
+    )
+
+input(ConfigBox,"ConfigNameInput","Default","Config Name",function(v) State.ConfigName=tostring(v) end)
+
+dropdown(ConfigBox,"ConfigList",{"Default"},"Default","Config List",function(v) State.ConfigName=tostring(v) end)
+
+ConfigBox:AddButton({
+    Text = "Save Config",
+    Func = function()
+        saveConfig(State.ConfigName)
+    end
+})
+
+ConfigBox:AddButton({
+    Text = "Load Config",
+    Func = function()
+        loadConfig(State.ConfigName)
+    end
+})
+
+ConfigBox:AddButton({
+    Text = "Delete Config",
+    Func = function()
+        deleteConfig(State.ConfigName)
+    end
+})
+
+ConfigBox:AddLabel(
+    "Configs are stored for the current session."
+)
+
+local RuntimeBox =
+    SettingsTab:AddRightGroupbox(
+        "Runtime"
+    )
+
+RuntimeBox:AddButton({
+    Text = "Disable All Teleports",
+    Func = disableAll
+})
+
+RuntimeBox:AddButton({
+    Text = "Reset Runtime",
+    Func = function()
+        Runtime.VoidAxisIndex = 1
+        Runtime.FrameCounter = 0
+        Runtime.FrameSequence = 0
+        Runtime.FrameBurstCounter = 0
+        Runtime.FramePatternIndex = 0
+        Runtime.OrbitAngle = 0
+        Runtime.CycloneAngle = 0
+        Runtime.UnpredictableBusy = false
+        Runtime.RiftBusy = false
+        Runtime.TeleportBusy = false
+        Runtime.LastTeleport = 0
+        Runtime.LastPosition = nil
+        Runtime.LastDestination = nil
+        Runtime.LastDirection = nil
+        Runtime.LastFramePosition = nil
+    end
+})
+
+RuntimeBox:AddButton({
+    Text = "Save Current As Default",
+    Func = function()
+        Runtime.Configs.Default =
+            copyState()
+
+        State.ConfigName =
+            "Default"
+
+        syncUI()
+    end
+})
+
+RuntimeBox:AddLabel(
+    "Astral teleport runtime is protected against individual loop errors."
+)
+
+Runtime.Configs.Default =
+    copyState()
+
+task.spawn(function()
+    while true do
+        if State.NormalTeleport then
+            pcall(normalStep)
+
+            task.wait(
+                getTeleportInterval(
+                    State.NormalInterval
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.VoidSpam then
+            pcall(voidStep)
+
+            local speed =
+                math.max(
+                    1,
+                    safeNumber(
+                        State.VoidSpeed,
+                        100
+                    )
+                )
+
+            local speedDelay =
+                1 / speed
+
+            local customDelay =
+                safeNumber(
+                    State.VoidDelay,
+                    0.02
+                )
+
+            task.wait(
+                math.max(
+                    MIN_INTERVAL,
+                    math.min(
+                        customDelay,
+                        speedDelay
+                    ) /
+                    math.max(
+                        0.05,
+                        State.SpeedMultiplier
+                    )
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.RandomTeleport then
+            pcall(randomStep)
+
+            task.wait(
+                getTeleportInterval(
+                    State.RandomDelay
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.CustomTeleport then
+            pcall(customStep)
+
+            task.wait(
+                getTeleportInterval(
+                    State.CustomInterval
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.Unpredictable then
+            if not Runtime.UnpredictableBusy then
+                task.spawn(
+                    unpredictableBurst
+                )
+            end
+
+            task.wait(
+                getTeleportInterval(
+                    0.01
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if State.FrameSkipper then
+        pcall(frameStep)
+    else
+        Runtime.FrameCounter = 0
+        Runtime.FrameBurstCounter = 0
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.Orbit then
+            local speed =
+                math.max(
+                    1,
+                    safeNumber(
+                        State.OrbitSpeed,
+                        12
+                    )
+                )
+
+            pcall(function()
+                orbitStep(
+                    math.min(
+                        0.1,
+                        1 / speed
+                    )
+                )
+            end)
+
+            task.wait(
+                math.max(
+                    MIN_INTERVAL,
+                    1 /
+                    (
+                        speed *
+                        4 *
+                        math.max(
+                            0.05,
+                            State.SpeedMultiplier
+                        )
+                    )
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.PhaseMatrix then
+            pcall(phaseStep)
+
+            local speed =
+                math.max(
+                    1,
+                    safeNumber(
+                        State.PhaseSpeed,
+                        8
+                    )
+                )
+
+            task.wait(
+                math.max(
+                    MIN_INTERVAL,
+                    1 /
+                    (
+                        speed *
+                        math.max(
+                            0.05,
+                            State.SpeedMultiplier
+                        )
+                    )
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.CycloneDrive then
+            local speed =
+                math.max(
+                    1,
+                    safeNumber(
+                        State.CycloneSpeed,
+                        10
+                    )
+                )
+
+            pcall(function()
+                cycloneStep(
+                    math.min(
+                        0.1,
+                        1 / speed
+                    )
+                )
+            end)
+
+            task.wait(
+                math.max(
+                    MIN_INTERVAL,
+                    1 /
+                    (
+                        speed *
+                        4 *
+                        math.max(
+                            0.05,
+                            State.SpeedMultiplier
+                        )
+                    )
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if State.RiftSurge then
+            if not Runtime.RiftBusy then
+                task.spawn(riftDash)
+            end
+
+            task.wait(
+                math.max(
+                    MIN_INTERVAL,
+                    safeNumber(
+                        State.RiftInterval,
+                        0.15
+                    ) /
+                    math.max(
+                        0.05,
+                        State.SpeedMultiplier
+                    )
+                )
+            )
+        else
+            task.wait(0.01)
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not State.VoidHide then
+        return
+    end
+
+    if not State.VoidStayFloating then
+        return
+    end
+
+    if not Runtime.VoidHidePosition then
+        return
+    end
+
+    pcall(function()
+        local root = getRoot()
+        if not root then
+            return
+        end
+
+        local target =
+            Runtime.VoidHidePosition
+
+        if (
+            root.Position -
+            target
+        ).Magnitude > 5 then
+
+            teleport(target)
+
+        elseif State.ResetVelocity then
+            root.AssemblyLinearVelocity =
+                Vector3.zero
+
+            root.AssemblyAngularVelocity =
+                Vector3.zero
+        end
+    end)
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    Runtime.VoidHidePosition = nil
+    Runtime.VoidOrigin = nil
+    Runtime.UnpredictableBusy = false
+    Runtime.RiftBusy = false
+    Runtime.TeleportBusy = false
+    Runtime.VoidAxisIndex = 1
+    Runtime.FrameCounter = 0
+    Runtime.FrameSequence = 0
+    Runtime.FrameBurstCounter = 0
+    Runtime.FramePatternIndex = 0
+    Runtime.UnpredictableSequence = 0
+    Runtime.OrbitAngle = 0
+    Runtime.CycloneAngle = 0
+    Runtime.LastTeleport = 0
+    Runtime.LastPosition = nil
+    Runtime.LastDestination = nil
+    Runtime.LastDirection = nil
+    Runtime.LastFramePosition = nil
+
+    if State.VoidHide then
+        task.delay(0.5, function()
+            if State.VoidHide then
+                pcall(
+                    enterVoidHide
+                )
+            end
+        end)
+    end
+end)
